@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>아리랑 연주하기 · 타로당</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <style>
 :root{
   --paper:#f1e9d8;
@@ -170,6 +173,15 @@ h1{
   line-height:1.7;
 }
 
+/* ---------- 타로당 홈(Tarosu-dang) 로그인 상태 표시 ---------- */
+.auth-status{
+  display:none; position:fixed; top:12px; right:16px; z-index:50;
+  font-size:12.5px; color:var(--wood-deep); background:#fbf7ec;
+  border:1px solid var(--paper-dark); border-radius:16px; padding:6px 14px;
+  box-shadow:0 2px 8px rgba(35,29,23,0.15);
+}
+.auth-status b{ color:var(--wood); }
+
 /* ---------- 곡 목록 / 곡 등록 모달 ---------- */
 .modal-overlay{
   display:none; position:fixed; inset:0; z-index:200; background:rgba(35,29,23,0.55);
@@ -207,6 +219,8 @@ h1{
 </style>
 </head>
 <body>
+
+<div class="auth-status" id="authStatus"></div>
 
 <h1>13현 고쟁으로 아리랑 연주하기 <span style="font-size:14px; color:var(--ink-soft);">(프로토타입)</span></h1>
 <p class="sub">계이름 점이 오른쪽 세로선에 닿는 순간, 그 줄을 터치하세요</p>
@@ -289,6 +303,56 @@ h1{
   </div>
 </div>
 
+<script>
+/* ===================== 타로당 홈(Tarosu-dang)과 로그인 상태 연동 =====================
+   같은 origin(tarosuooa.github.io)에서 같은 Firebase 프로젝트를 쓰기 때문에,
+   홈 사이트에서 로그인해두면 이 페이지에서도 별도 로그인 없이 로그인 상태가 그대로 이어진다. */
+const firebaseConfig = {
+  apiKey: "AIzaSyBB_bvFce5LwuNN32-M3-BlUluff9vEhKc",
+  authDomain: "tarosu-dang.firebaseapp.com",
+  projectId: "tarosu-dang",
+  storageBucket: "tarosu-dang.firebasestorage.app",
+  messagingSenderId: "912231980098",
+  appId: "1:912231980098:web:e86c6b44252814b7a521db",
+  measurementId: "G-P3CPQM1G77"
+};
+const FIREBASE_CONFIGURED = firebaseConfig.apiKey && firebaseConfig.apiKey !== "YOUR_API_KEY";
+let fbDb = null, fbAuth = null;
+if(FIREBASE_CONFIGURED){
+  try{
+    firebase.initializeApp(firebaseConfig);
+    fbDb = firebase.firestore();
+    fbAuth = firebase.auth();
+  }catch(e){
+    console.error('Firebase 초기화 실패', e);
+  }
+}
+
+function updateAuthStatusUI(nickname){
+  const el = document.getElementById('authStatus');
+  if(!el) return;
+  if(nickname){
+    el.innerHTML = '<b>' + escapeHtml(nickname) + '</b> 님 접속 중';
+    el.style.display = 'block';
+  }else{
+    el.style.display = 'none';
+  }
+}
+
+if(fbAuth){
+  fbAuth.onAuthStateChanged(async (user)=>{
+    if(!user){ updateAuthStatusUI(null); return; }
+    let nickname = user.displayName || '회원';
+    try{
+      const udoc = await fbDb.collection('users').doc(user.uid).get();
+      if(udoc.exists && udoc.data().nickname) nickname = udoc.data().nickname;
+    }catch(e){
+      console.error('닉네임 조회 실패', e);
+    }
+    updateAuthStatusUI(nickname);
+  });
+}
+</script>
 <script>
 /* ===================== 고쟁 13현 음정 (타로당 홈 화면과 동일한 음계) ===================== */
 const NOTES = ['A3','B3','D4','E4','F#4','A4','B4','D5','E5','F#5','A5','B5','D6'];
@@ -397,7 +461,7 @@ let startTime = 0;
 let running = false;
 let counting = false;
 let rafId = null;
-let score = 0, combo = 0, maxCombo = 0, judgedCount = 0, perfectCount = 0;
+let score = 0, combo = 0, maxCombo = 0, judgedCount = 0, perfectCount = 0, goodCount = 0;
 
 const stage = document.getElementById('stage');
 const scoreEl = document.getElementById('scoreEl');
@@ -572,7 +636,7 @@ window.addEventListener('blur', stopTremolo);
 function judge(label, laneIndex){
   judgedCount++;
   if(label==='PERFECT'){ score += 100; combo++; perfectCount++; judgmentEl.style.color='var(--gold-bright)'; }
-  else if(label==='GOOD'){ score += 60; combo++; judgmentEl.style.color='var(--jade)'; }
+  else if(label==='GOOD'){ score += 60; combo++; goodCount++; judgmentEl.style.color='var(--jade)'; }
   else { combo = 0; judgmentEl.style.color='var(--danger)'; }
   maxCombo = Math.max(maxCombo, combo);
   judgmentEl.textContent = label + (combo>1 ? ' · ' + combo + '콤보' : '');
@@ -592,7 +656,7 @@ function judge(label, laneIndex){
 function startGame(){
   if(running || counting) return;
   counting = true;
-  score=0; combo=0; maxCombo=0; judgedCount=0; perfectCount=0;
+  score=0; combo=0; maxCombo=0; judgedCount=0; perfectCount=0; goodCount=0;
   scoreEl.textContent='0'; comboEl.textContent='0'; judgmentEl.textContent='\u00a0';
   endScreen.classList.remove('show');
   stage.querySelectorAll('.note, .hit-pop').forEach(el=>el.remove());
@@ -631,10 +695,13 @@ function endGame(){
   if(rafId) cancelAnimationFrame(rafId);
   document.getElementById('finalScore').textContent = score;
   const total = SONG.length;
-  const grade = perfectCount >= total*0.8 ? 'S — 완벽한 연주였어요!' :
-                judgedCount >= total*0.7 ? 'A — 훌륭해요!' :
-                judgedCount >= total*0.4 ? 'B — 나쁘지 않아요' : 'C — 다시 도전해보세요';
-  document.getElementById('finalGrade').textContent = '최고 콤보 ' + maxCombo + ' · ' + grade;
+  const successCount = perfectCount + goodCount; // PERFECT/GOOD 판정을 받은 노트 수 (MISS 제외)
+  const successRate = total > 0 ? (successCount / total) * 100 : 0;
+  const grade = successRate >= 90 ? 'PERFECT' :
+                successRate >= 60 ? 'GOOD' :
+                successRate >= 30 ? 'NORMAL' : 'WUWUWU';
+  document.getElementById('finalGrade').textContent =
+    '최고 콤보 ' + maxCombo + ' · ' + grade + ' (' + successRate.toFixed(0) + '%)';
   endScreen.classList.add('show');
   startBtn.disabled = false;
 }
