@@ -1025,8 +1025,8 @@ function showEditorToast(msg){
 buildGrid();
 
 /* ===================== 게임 곡 목록에서 '곡 편집기에서 수정'으로 넘어온 경우, 그리드에 자동으로 불러오기 ===================== */
-const SONG_STORE_KEY = 'tarodang_guzheng_songs'; // 게임 화면과 동일한 localStorage 키 (같은 origin이라 공유됨)
-const EDIT_HANDOFF_KEY = 'tarodang_guzheng_edit_payload';
+const SONGS_COLLECTION = 'songs'; // 게임 화면과 동일한 Firestore 컬렉션 (모든 기기에서 공유됨)
+const EDIT_HANDOFF_KEY = 'tarodang_guzheng_edit_payload'; // 같은 브라우저 새 탭으로 넘길 때만 쓰는 임시 통로
 let editingSongId = null;
 
 // 그리드 상태를 정확히 그대로(근사 없이) 저장/복원하기 위한 스냅샷.
@@ -1106,12 +1106,13 @@ function checkIncomingEditPayload(){
 }
 checkIncomingEditPayload();
 
-// '이 곡에 저장': 코드 복사/붙여넣기 없이, 지금 그리드 내용을 게임의 곡 목록에 바로 반영한다
-function saveBackToGame(){
+// '이 곡에 저장': 코드 복사/붙여넣기 없이, 지금 그리드 내용을 서버의 곡 목록에 바로 반영한다
+async function saveBackToGame(){
   if(!editingSongId){
     showEditorToast('게임의 곡 목록에서 \'수정 → 곡 편집기에서 수정\'으로 들어왔을 때만 사용할 수 있어요.');
     return;
   }
+  if(!fbDb){ showEditorToast('지금은 저장할 수 없어요.'); return; }
   const bpm = Number(document.getElementById('bpmInput').value) || 100;
   const events = buildOrderedSong();
   if(events.length === 0){ showEditorToast('저장할 음이 없어요.'); return; }
@@ -1123,23 +1124,23 @@ function saveBackToGame(){
     return mark ? [ev.lane, gapBeats, mark] : [ev.lane, gapBeats];
   });
   try{
-    const raw = localStorage.getItem(SONG_STORE_KEY);
-    const list = raw ? JSON.parse(raw) : [];
-    const idx = list.findIndex(s => s.id === editingSongId);
-    if(idx === -1){ showEditorToast('원본 곡을 찾을 수 없어요. 이미 삭제됐을 수 있어요.'); return; }
-    list[idx].bpm = bpm;
-    list[idx].song = songArr;
-    list[idx].notesSnapshot = captureGridSnapshot(); // 다음에 또 수정할 때 블록이 절대 안 바뀌도록 함께 저장
-    localStorage.setItem(SONG_STORE_KEY, JSON.stringify(list));
+    await fbDb.collection(SONGS_COLLECTION).doc(editingSongId).update({
+      bpm, song: songArr,
+      notesSnapshot: captureGridSnapshot() // 다음에 또 수정할 때 블록이 절대 안 바뀌도록 함께 저장
+    });
     showEditorToast('게임의 곡 목록에 저장했어요! 게임 탭에서 확인해보세요.');
   }catch(e){
     console.error('게임에 저장 실패', e);
-    showEditorToast('저장에 실패했어요.');
+    showEditorToast('저장에 실패했어요. 로그인 상태와 본인이 등록한 곡인지 확인해주세요.');
   }
 }
 
 /* ===================== '편집 완료' → 곡 정보 입력 후 곧바로 곡 목록에 새로 등록 ===================== */
 function openPublishModal(){
+  if(!fbAuth || !fbAuth.currentUser){
+    showEditorToast('로그인한 상태여야 곡을 등록할 수 있어요.');
+    return;
+  }
   const events = buildOrderedSong();
   if(events.length === 0){ showEditorToast('등록할 음이 없어요. 먼저 곡을 만들어주세요.'); return; }
   document.getElementById('pubName').value = '';
@@ -1151,13 +1152,15 @@ function openPublishModal(){
 function closePublishModal(){
   document.getElementById('publishModal').classList.remove('show');
 }
-function submitPublish(){
+async function submitPublish(){
   const name = document.getElementById('pubName').value.trim();
   const artist = document.getElementById('pubArtist').value.trim();
   const maker = document.getElementById('pubMaker').value.trim();
   const errEl = document.getElementById('pubError');
   errEl.textContent = '';
+  if(!fbAuth || !fbAuth.currentUser){ errEl.textContent = '로그인한 상태여야 곡을 등록할 수 있어요.'; return; }
   if(!name){ errEl.textContent = '곡 이름을 입력해주세요'; return; }
+  if(!fbDb){ errEl.textContent = '지금은 등록할 수 없어요.'; return; }
 
   const bpm = Number(document.getElementById('bpmInput').value) || 100;
   const events = buildOrderedSong();
@@ -1170,17 +1173,13 @@ function submitPublish(){
     return mark ? [ev.lane, gapBeats, mark] : [ev.lane, gapBeats];
   });
   try{
-    const raw = localStorage.getItem(SONG_STORE_KEY);
-    const list = raw ? JSON.parse(raw) : [];
-    list.unshift({
-      id: 'song_' + Date.now().toString(36) + Math.random().toString(36).slice(2,7),
+    await fbDb.collection(SONGS_COLLECTION).add({
       name, artist, maker,
       bpm, song: songArr,
       notesSnapshot: captureGridSnapshot(),
       createdAt: Date.now(),
-      uploaderUid: (fbAuth && fbAuth.currentUser) ? fbAuth.currentUser.uid : null
+      uploaderUid: fbAuth.currentUser.uid
     });
-    localStorage.setItem(SONG_STORE_KEY, JSON.stringify(list));
     closePublishModal();
     showEditorToast('곡이 등록됐어요! 게임 화면의 곡 목록에서 바로 플레이할 수 있어요.');
   }catch(e){
