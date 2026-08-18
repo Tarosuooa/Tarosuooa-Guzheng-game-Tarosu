@@ -41,7 +41,7 @@ h1{ font-size:20px; color:var(--wood-deep); font-family:'Nanum Myeongjo',serif; 
   border-radius:8px; padding:10px 10px 14px; box-shadow:0 6px 20px rgba(35,29,23,0.3);
   user-select:none;
 }
-.grid{ display:inline-block; }
+.grid{ display:inline-block; position:relative; }
 .row{ display:flex; align-items:center; height:26px; }
 .row-label{
   width:40px; flex:none; font-size:10.5px; color:rgba(241,233,216,0.55);
@@ -60,22 +60,15 @@ h1{ font-size:20px; color:var(--wood-deep); font-family:'Nanum Myeongjo',serif; 
 .cell.beat0{ margin-left:5px; }
 .row.teal .cell.on{ background:#5bd6c9; }
 .row.teal .row-label{ color:#5bd6c9; }
-/* 노트 표시: shift+클릭(또는 '트레몰로' 버튼)=///, a+클릭(또는 '반음 UP')=A, s+클릭(또는 '한 키 UP')=S */
-.cell.on.tremolo{
-  background:transparent; border:1.5px solid var(--gold-bright); color:var(--gold-bright);
-  display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; letter-spacing:-1px;
+/* 노트 표시: shift+클릭(또는 '트레몰로' 버튼)=///, a+클릭(또는 '반음 UP')=A, s+클릭(또는 '한 키 UP')=S
+   블록 색은 일반 노트와 동일하게 유지하고, 표시 글자만 블록보다 어두운 색으로 얹는다 */
+.cell.on.tremolo, .cell.on.semitone, .cell.on.step{
+  display:flex; align-items:center; justify-content:center;
+  font-weight:800; letter-spacing:-1px; color:var(--wood-deep);
 }
-.row.teal .cell.on.tremolo{ border-color:#5bd6c9; color:#5bd6c9; }
-.cell.on.semitone{
-  background:transparent; border:1.5px solid var(--jade); color:var(--jade);
-  display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:800;
-}
-.row.teal .cell.on.semitone{ border-color:var(--jade); color:var(--jade); }
-.cell.on.step{
-  background:transparent; border:1.5px solid var(--plum); color:var(--plum);
-  display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:800;
-}
-.row.teal .cell.on.step{ border-color:var(--plum); color:var(--plum); }
+.cell.on.tremolo{ font-size:11px; }
+.cell.on.semitone, .cell.on.step{ font-size:12px; }
+.row.teal .cell.on.tremolo, .row.teal .cell.on.semitone, .row.teal .cell.on.step{ color:#0a4a47; }
 /* Ctrl+클릭 다중 선택 표시 */
 .cell.selected{ outline:2px solid #4da6ff; outline-offset:-1px; }
 .note-btn{
@@ -435,6 +428,10 @@ function buildGrid(){
     }
     grid.appendChild(row);
   }
+  const playhead = document.createElement('div');
+  playhead.className = 'playhead';
+  playhead.id = 'playhead';
+  grid.appendChild(playhead);
   refreshGrid();
 }
 
@@ -560,6 +557,45 @@ function playSequence(){
   events.forEach(ev=>{
     setTimeout(()=>playNote(ev.lane, undefined, TYPE_BEND[ev.type]), ev.step * stepMs);
   });
+  const totalSteps = events.reduce((max, ev) => Math.max(max, ev.step + ev.durSteps), 0);
+  animatePlayhead(totalSteps * stepMs, stepMs);
+}
+
+/* ---------- 재생 위치를 보여주는 빨간 플레이헤드 ---------- */
+const CELL_SLOT = 24;       // .cell 22px + 좌우 마진(1px*2)
+const BEAT_GROUP_EXTRA = 5; // .cell.beat0 의 margin-left 추가분 (4박=8칸마다)
+const LABEL_WIDTH = 40;     // .row-label 너비
+function stepToX(step){
+  return LABEL_WIDTH + step * CELL_SLOT + Math.floor(step / 8) * BEAT_GROUP_EXTRA;
+}
+let playheadRafId = null;
+function animatePlayhead(totalMs, stepMs){
+  const playhead = document.getElementById('playhead');
+  const gridWrap = document.querySelector('.grid-wrap');
+  if(playheadRafId) cancelAnimationFrame(playheadRafId);
+  if(!playhead || totalMs <= 0) return;
+  playhead.style.display = 'block';
+  const start = performance.now();
+  function frame(now){
+    const elapsed = now - start;
+    if(elapsed >= totalMs){
+      playhead.style.display = 'none';
+      playheadRafId = null;
+      return;
+    }
+    const x = stepToX(elapsed / stepMs);
+    playhead.style.left = x + 'px';
+    if(gridWrap){
+      // 플레이헤드가 화면 밖으로 나가려 하면 자동으로 따라 스크롤
+      const visibleLeft = gridWrap.scrollLeft;
+      const visibleRight = visibleLeft + gridWrap.clientWidth;
+      if(x < visibleLeft + 20 || x > visibleRight - 40){
+        gridWrap.scrollLeft = Math.max(0, x - gridWrap.clientWidth * 0.3);
+      }
+    }
+    playheadRafId = requestAnimationFrame(frame);
+  }
+  playheadRafId = requestAnimationFrame(frame);
 }
 
 function exportCode(){
@@ -589,6 +625,40 @@ const SONG = [
 ${lines}
 ];`;
   document.getElementById('exportBox').value = code;
+  copyToClipboard(code);
+}
+
+/* ---------- 코드 내보내기 시 자동 클립보드 복사 ---------- */
+function copyToClipboard(text){
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text)
+      .then(()=> showEditorToast('코드를 클립보드에 복사했어요!'))
+      .catch(()=> { if(!fallbackCopy(text)) showEditorToast('자동 복사에 실패했어요. 상자를 직접 선택해서 복사해주세요.'); });
+  }else{
+    if(!fallbackCopy(text)) showEditorToast('자동 복사에 실패했어요. 상자를 직접 선택해서 복사해주세요.');
+  }
+}
+function fallbackCopy(text){
+  try{
+    const ta = document.getElementById('exportBox');
+    ta.focus(); ta.select();
+    const ok = document.execCommand('copy');
+    if(ok) showEditorToast('코드를 클립보드에 복사했어요!');
+    return ok;
+  }catch(e){ return false; }
+}
+function showEditorToast(msg){
+  let toast = document.getElementById('editorToast');
+  if(!toast){
+    toast = document.createElement('div');
+    toast.id = 'editorToast';
+    toast.style.cssText = 'position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:var(--ink); color:var(--paper); padding:10px 20px; border-radius:20px; font-size:13px; z-index:300; opacity:0; transition:opacity .25s; pointer-events:none;';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = msg;
+  toast.style.opacity = '1';
+  clearTimeout(showEditorToast._t);
+  showEditorToast._t = setTimeout(()=>{ toast.style.opacity='0'; }, 2200);
 }
 
 buildGrid();
