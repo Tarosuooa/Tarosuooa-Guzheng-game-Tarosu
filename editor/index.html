@@ -7,7 +7,7 @@
 <style>
 :root{
   --paper:#f1e9d8; --paper-dark:#e6dabf; --ink:#231d17; --ink-soft:#564a3d;
-  --wood:#7a3324; --wood-deep:#4b1f17; --gold:#b8903f; --gold-bright:#dcb56a; --jade:#3f5e52;
+  --wood:#7a3324; --wood-deep:#4b1f17; --gold:#b8903f; --gold-bright:#dcb56a; --jade:#3f5e52; --plum:#6b3f7a;
 }
 *{box-sizing:border-box;}
 body{
@@ -46,8 +46,9 @@ h1{ font-size:20px; color:var(--wood-deep); font-family:'Nanum Myeongjo',serif; 
 .row-label{
   width:40px; flex:none; font-size:10.5px; color:rgba(241,233,216,0.55);
   font-family:'Noto Sans KR',sans-serif; text-align:right; padding-right:8px;
-  position:sticky; left:0; z-index:3; background:#3a2416;
+  position:sticky; left:0; z-index:3; background:#3a2416; cursor:pointer;
 }
+.row-label:hover{ color:#fff; }
 .cell{
   width:22px; height:22px; margin:1px; flex:none; border-radius:3px;
   background:rgba(255,255,255,0.06); cursor:pointer; position:relative;
@@ -59,12 +60,31 @@ h1{ font-size:20px; color:var(--wood-deep); font-family:'Nanum Myeongjo',serif; 
 .cell.beat0{ margin-left:5px; }
 .row.teal .cell.on{ background:#5bd6c9; }
 .row.teal .row-label{ color:#5bd6c9; }
-/* 슬라이드 노트(///): shift+클릭으로 찍으면 점 대신 이 기호가 표시됨 */
-.cell.on.slide{
+/* 노트 표시: shift+클릭(또는 '트레몰로' 버튼)=///, a+클릭(또는 '반음 UP')=A, s+클릭(또는 '한 키 UP')=S */
+.cell.on.tremolo{
   background:transparent; border:1.5px solid var(--gold-bright); color:var(--gold-bright);
   display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; letter-spacing:-1px;
 }
-.row.teal .cell.on.slide{ border-color:#5bd6c9; color:#5bd6c9; }
+.row.teal .cell.on.tremolo{ border-color:#5bd6c9; color:#5bd6c9; }
+.cell.on.semitone{
+  background:transparent; border:1.5px solid var(--jade); color:var(--jade);
+  display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:800;
+}
+.row.teal .cell.on.semitone{ border-color:var(--jade); color:var(--jade); }
+.cell.on.step{
+  background:transparent; border:1.5px solid var(--plum); color:var(--plum);
+  display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:800;
+}
+.row.teal .cell.on.step{ border-color:var(--plum); color:var(--plum); }
+/* Ctrl+클릭 다중 선택 표시 */
+.cell.selected{ outline:2px solid #4da6ff; outline-offset:-1px; }
+.note-btn{
+  border:1px solid var(--paper-dark); background:#fff; color:var(--ink-soft);
+  padding:5px 12px; border-radius:14px; font-size:12.5px; cursor:pointer;
+}
+.note-btn.active{ background:var(--jade); border-color:var(--jade); color:#fff; }
+.note-btn.active[data-type="step"]{ background:var(--plum); border-color:var(--plum); }
+.note-btn.active[data-type="tremolo"]{ background:var(--wood); border-color:var(--wood); }
 .playhead{
   position:absolute; top:0; bottom:0; width:2px; background:rgba(255,90,90,0.9);
   pointer-events:none; display:none;
@@ -127,6 +147,12 @@ textarea#exportBox{
   z-index:4; pointer-events:none;
 }
 .test-note.teal{ background:radial-gradient(circle at 35% 30%, #b6ffe0, #127c77 65%, #0a4a47 100%); }
+.test-note.mark{
+  background:transparent; box-shadow:none; border-radius:0; width:auto; height:auto;
+  padding:0 2px; font-size:14px; font-weight:800; letter-spacing:-1px; white-space:nowrap;
+  color:var(--gold-bright); text-shadow:0 0 6px rgba(220,181,106,0.5);
+}
+.test-note.mark.teal{ color:#5bd6c9; text-shadow:0 0 6px rgba(91,214,201,0.5); }
 .test-hit-pop{
   position:absolute; left:78%; transform:translate(-50%,-50%); font-size:12px; font-weight:800;
   z-index:8; pointer-events:none; animation:testPopfade .5s ease forwards;
@@ -169,6 +195,10 @@ textarea#exportBox{
   <button class="dur-btn" data-dur="1" onclick="setDuration(1, this)">0.5박</button>
   <button class="dur-btn active" data-dur="2" onclick="setDuration(2, this)">1박</button>
   <button class="dur-btn" data-dur="4" onclick="setDuration(4, this)">2박</button>
+  <span style="color:var(--ink-soft); font-size:12.5px;">음 표시:</span>
+  <button class="note-btn" data-type="semitone" onclick="toggleNoteType('semitone', this)">반음 UP</button>
+  <button class="note-btn" data-type="step" onclick="toggleNoteType('step', this)">한 키 UP</button>
+  <button class="note-btn" data-type="tremolo" onclick="toggleNoteType('tremolo', this)">트레몰로 추가</button>
   <label>🔊 <input type="range" id="volumeSlider" min="0" max="100" value="20" step="1" oninput="setVolume(this.value)" style="width:90px; vertical-align:middle;"><span id="volumeLabel" style="font-size:11.5px; color:var(--ink-soft); min-width:30px; display:inline-block;">20%</span></label>
   <button class="btn small" onclick="playSequence()">▶ 재생</button>
   <button class="btn small" onclick="startTestPlay()">🎮 테스트 플레이</button>
@@ -207,11 +237,16 @@ textarea#exportBox{
 <div class="guide">
   <b>사용법</b><br>
   1. 원하는 계이름 줄(왼쪽 표시)에서, 원하는 타이밍(칸)을 클릭하면 노란 점이 찍히고 소리가 나요. 다시 클릭하면 지워져요.<br>
-  2. 위쪽에서 '0.5박' · '1박' · '2박' 중 음 길이를 고른 뒤 클릭하면, 그 길이만큼 늘여 치는 음을 찍을 수 있어요.<br>
-  3. <b>Shift를 누른 채로 클릭</b>하면 점 대신 <b>///</b> 기호가 찍혀요 (슬라이드 노트 표시용). 다시 클릭하면 지워져요.<br>
-  4. '재생' 버튼으로 지금까지 만든 곡을 처음부터 들어볼 수 있어요 (빨간 선이 재생 위치예요).<br>
-  5. 다 만들었으면 '코드 내보내기'를 누르고, 아래 상자에 나온 내용을 통째로 복사해서<br>
-  &nbsp;&nbsp;&nbsp;게임 파일(nabiya-game.html)의 <code>const SONG = [ ... ];</code> 부분을 통째로 바꿔치기 하면 새 곡으로 바로 플레이할 수 있어요.
+  2. 음 길이: <b>Q</b>=0.5박, <b>W</b>=1박, <b>E</b>=2박 (또는 위쪽 버튼 클릭).<br>
+  3. <b>Shift+클릭</b>은 <b>///</b>(트레몰로), <b>A+클릭</b>은 <b>A</b>(반음 UP), <b>S+클릭</b>은 <b>S</b>(한 키 UP) 표시로 찍혀요.<br>
+  &nbsp;&nbsp;&nbsp;키보드 대신 위쪽 '반음 UP' · '한 키 UP' · '트레몰로 추가' 버튼을 눌러서 모드를 켠 채로 계속 클릭해도 돼요 (다시 누르면 꺼짐).<br>
+  4. 이 표시들은 실제 게임에서 다가오는 점 위에 그대로 나타나서, 연주자에게 "이 음은 반음/한 키 올려 치세요" 또는 "트레몰로로 치세요"라고 안내해줘요.<br>
+  5. <b>Ctrl+클릭</b>으로 여러 음을 선택할 수 있고(다시 Ctrl+클릭하면 해제), <b>Ctrl+A</b>로 전체 선택, 선택된 상태에서 <b>Delete/Backspace</b>로 한 번에 지울 수 있어요. <b>Esc</b>는 선택 해제예요.<br>
+  6. <b>Ctrl+Z</b> 되돌리기, <b>Ctrl+Y</b> 다시 실행.<br>
+  7. 왼쪽 계이름 글자를 클릭하면 그 음을 바로 들어볼 수 있어요.<br>
+  8. '재생' 버튼으로 지금까지 만든 곡을 처음부터 들어볼 수 있고(빨간 선이 재생 위치), '테스트 플레이'로 실제 게임처럼 플레이해볼 수 있어요.<br>
+  9. 다 만들었으면 '코드 내보내기'를 누르고, 아래 상자에 나온 내용을 통째로 복사해서<br>
+  &nbsp;&nbsp;&nbsp;게임 파일(index.html)의 <code>const SONG = [ ... ];</code> 부분을 통째로 바꿔치기 하면 새 곡으로 바로 플레이할 수 있어요.
 </div>
 
 <script>
@@ -242,13 +277,20 @@ function buildPluckedBuffer(ctx, freq, dur, damping){
   for(let n=0;n<total;n++){ const next=(idx+1)%N; data[n]=ring[idx]; ring[idx]=damping*0.5*(ring[idx]+ring[next]); idx=next; }
   return buf;
 }
-async function playNote(lane, vol){
-  const note=NOTES[lane], freq=NOTE_FREQ[note];
+async function playNote(lane, vol, bend){
+  const note=NOTES[lane];
+  let freq=NOTE_FREQ[note];
   if(!freq) return;
+  let cacheKey = note;
+  if(bend === 'semitone'){ freq = freq * Math.pow(2, 1/12); cacheKey = note + '#semi'; }
+  else if(bend === 'step'){
+    const nextNote = NOTES[lane+1];
+    if(nextNote && NOTE_FREQ[nextNote]){ freq = NOTE_FREQ[nextNote]; cacheKey = nextNote; }
+  }
   if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)();
   if(audioCtx.state==='suspended') await audioCtx.resume();
-  let buf=bufferCache[note];
-  if(!buf){ buf=buildPluckedBuffer(audioCtx, freq, 1.8, dampingForFreq(freq)); bufferCache[note]=buf; }
+  let buf=bufferCache[cacheKey];
+  if(!buf){ buf=buildPluckedBuffer(audioCtx, freq, 1.8, dampingForFreq(freq)); bufferCache[cacheKey]=buf; }
   const src=audioCtx.createBufferSource(); src.buffer=buf;
   const tone=audioCtx.createBiquadFilter(); tone.type='lowpass'; tone.frequency.value=5200;
   const gain=audioCtx.createGain(); gain.gain.value = vol!==undefined ? vol : masterVolume;
@@ -256,18 +298,103 @@ async function playNote(lane, vol){
   src.start();
 }
 
+/* ---------- 반음 UP / 한 키 UP 키보드 조작 + 그리드 단축키 ----------
+   a+클릭=반음, s+클릭=한 키 위로
+   Q/W/E=0.5박/1박/2박 선택, Ctrl+Z=뒤로, Ctrl+Y=다시 실행, Ctrl+A=전체 선택,
+   Delete/Backspace=선택 삭제, Esc=선택 해제 */
+let aKeyDown = false, sKeyDown = false;
+window.addEventListener('keydown', (e)=>{
+  const k = e.key.toLowerCase();
+  const tag = (e.target.tagName||'').toLowerCase();
+  const typing = (tag==='input' || tag==='textarea');
+
+  if(k==='a' && !(e.ctrlKey||e.metaKey) && !typing) aKeyDown = true;
+  if(k==='s' && !(e.ctrlKey||e.metaKey) && !typing) sKeyDown = true;
+  if(typing) return; // 입력창에 타이핑 중일 땐 아래 단축키들을 막는다
+
+  if((e.ctrlKey||e.metaKey) && k==='z'){ e.preventDefault(); undo(); return; }
+  if((e.ctrlKey||e.metaKey) && k==='y'){ e.preventDefault(); redo(); return; }
+  if((e.ctrlKey||e.metaKey) && k==='a'){ e.preventDefault(); selectAllNotes(); return; }
+  if(k==='q'){ selectDurationByKey(1); return; }
+  if(k==='w'){ selectDurationByKey(2); return; }
+  if(k==='e'){ selectDurationByKey(4); return; }
+  if((k==='delete'||k==='backspace') && selectedCells.size>0){ e.preventDefault(); deleteSelectedNotes(); return; }
+  if(k==='escape' && selectedCells.size>0){ selectedCells.clear(); refreshGrid(); return; }
+});
+window.addEventListener('keyup', (e)=>{
+  const k = e.key.toLowerCase();
+  if(k==='a') aKeyDown = false;
+  if(k==='s') sKeyDown = false;
+});
+window.addEventListener('blur', ()=>{ aKeyDown=false; sKeyDown=false; });
+
+/* 위쪽 툴바의 '반음 UP' · '한 키 UP' · '트레몰로 추가' 버튼: 눌러서 모드를 켜면
+   키보드 없이도 계속 그 표시로 클릭할 수 있다 (다시 누르면 꺼짐 -> 일반 점으로 복귀) */
+let currentNoteType = 'normal';
+function toggleNoteType(type, btn){
+  currentNoteType = (currentNoteType === type) ? 'normal' : type;
+  document.querySelectorAll('.note-btn').forEach(b=>b.classList.remove('active'));
+  if(currentNoteType !== 'normal') btn.classList.add('active');
+}
+function resolveNoteType(shiftKey){
+  if(shiftKey) return 'tremolo';
+  if(aKeyDown) return 'semitone';
+  if(sKeyDown) return 'step';
+  return currentNoteType;
+}
+
 /* ---------- 그리드 ---------- */
 // cells[lane][step] = 0(없음) | 1(0.5박 노트 시작) | 2(1박 노트 시작) | 4(2박 노트 시작)  ※ 값의 단위는 '칸 수'
-// cellTypes[lane][step] = 'normal'(점) | 'slide'(///, shift+클릭으로 찍음)
+// cellTypes[lane][step] = 'normal'(점) | 'tremolo'(///) | 'semitone'(A, 반음 UP) | 'step'(S, 한 키 UP)
 const cells = NOTES.map(()=>new Array(STEPS).fill(0));
 const cellTypes = NOTES.map(()=>new Array(STEPS).fill('normal'));
 const MAX_DUR = 4; // 현재 지원하는 최대 음 길이(칸 수) = 2박
 let currentDur = 2; // 기본값: 1박(2칸)
+const TYPE_MARK = { tremolo:'///', semitone:'A', step:'S' };
+const TYPE_BEND = { semitone:'semitone', step:'step' }; // 미리듣기 재생용 pitch bend 매핑
+
+// Ctrl+클릭으로 선택한 노트들 ("lane,step" 문자열 키, step은 항상 노트 시작 칸)
+const selectedCells = new Set();
+function cellKey(lane, step){ return lane + ',' + step; }
+
+// 되돌리기(Ctrl+Z) / 다시 실행(Ctrl+Y)
+let undoStack = [];
+let redoStack = [];
+const MAX_HISTORY = 100;
+function snapshotState(){
+  return { cells: cells.map(row=>row.slice()), cellTypes: cellTypes.map(row=>row.slice()) };
+}
+function restoreState(snap){
+  for(let l=0; l<13; l++){ cells[l] = snap.cells[l].slice(); cellTypes[l] = snap.cellTypes[l].slice(); }
+}
+function pushHistory(){
+  undoStack.push(snapshotState());
+  if(undoStack.length > MAX_HISTORY) undoStack.shift();
+  redoStack.length = 0; // 새 작업을 하면 이전 redo 기록은 무효화됨
+}
+function undo(){
+  if(undoStack.length === 0) return;
+  redoStack.push(snapshotState());
+  restoreState(undoStack.pop());
+  selectedCells.clear();
+  refreshGrid();
+}
+function redo(){
+  if(redoStack.length === 0) return;
+  undoStack.push(snapshotState());
+  restoreState(redoStack.pop());
+  selectedCells.clear();
+  refreshGrid();
+}
 
 function setDuration(d, btn){
   currentDur = d;
   document.querySelectorAll('.dur-btn').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
+}
+function selectDurationByKey(d){
+  const btn = document.querySelector('.dur-btn[data-dur="' + d + '"]');
+  if(btn) setDuration(d, btn);
 }
 
 function buildGrid(){
@@ -280,6 +407,8 @@ function buildGrid(){
     const label = document.createElement('div');
     label.className = 'row-label';
     label.textContent = NOTES[lane];
+    label.title = '클릭하면 이 음을 미리 들어볼 수 있어요';
+    label.addEventListener('click', ()=> playNote(lane));
     row.appendChild(label);
     for(let step=0; step<STEPS; step++){
       const cell = document.createElement('div');
@@ -289,13 +418,18 @@ function buildGrid(){
       cell.addEventListener('mousedown', (e)=>{
         e.preventDefault();
         if(e.button !== 0 && e.button !== 2) return;
+        if(e.button === 0 && (e.ctrlKey || e.metaKey)){
+          toggleSelectCell(lane, step); // Ctrl+클릭: 다중 선택
+          return;
+        }
+        if(selectedCells.size > 0){ selectedCells.clear(); refreshGrid(); }
         dragging = true;
         dragAdding = (e.button === 0); // 왼쪽 버튼=칠하기, 오른쪽 버튼=지우기
-        dragSlide = e.shiftKey; // shift를 누른 채로 시작하면 이번 드래그는 슬라이드(///) 노트로 찍힘
-        paintCell(lane, step, dragAdding, dragSlide);
+        dragType = resolveNoteType(e.shiftKey); // 이번 드래그 동안 적용할 노트 표시(트레몰로/반음/한 키/일반)
+        paintCell(lane, step, dragAdding, dragType);
       });
       cell.addEventListener('mouseenter', ()=>{
-        if(dragging) paintCell(lane, step, dragAdding, dragSlide);
+        if(dragging) paintCell(lane, step, dragAdding, dragType);
       });
       row.appendChild(cell);
     }
@@ -306,19 +440,57 @@ function buildGrid(){
 
 let dragging = false;
 let dragAdding = true;
-let dragSlide = false;
+let dragType = 'normal';
 document.addEventListener('mouseup', ()=>{ dragging = false; });
 
-function paintCell(lane, step, add, isSlide){
+function toggleSelectCell(lane, step){
+  // 긴 노트의 가려진 칸을 클릭했으면, 그 노트의 시작 칸을 찾는다
+  let s = step;
+  if(cells[lane][s] === 0){
+    for(let k=1; k<MAX_DUR; k++){
+      const s2 = step - k;
+      if(s2 < 0) break;
+      if(cells[lane][s2] > k){ s = s2; break; }
+    }
+  }
+  if(cells[lane][s] === 0) return; // 노트가 없는 칸은 선택할 수 없음
+  const key = cellKey(lane, s);
+  if(selectedCells.has(key)) selectedCells.delete(key); else selectedCells.add(key);
+  refreshGrid();
+}
+function selectAllNotes(){
+  selectedCells.clear();
+  for(let lane=0; lane<13; lane++){
+    for(let step=0; step<STEPS; step++){
+      if(cells[lane][step] > 0) selectedCells.add(cellKey(lane, step));
+    }
+  }
+  refreshGrid();
+}
+function deleteSelectedNotes(){
+  if(selectedCells.size === 0) return;
+  pushHistory();
+  selectedCells.forEach(key=>{
+    const [lane, step] = key.split(',').map(Number);
+    cells[lane][step] = 0;
+    cellTypes[lane][step] = 'normal';
+  });
+  selectedCells.clear();
+  refreshGrid();
+}
+
+function paintCell(lane, step, add, noteType){
   if(add){
     if(cells[lane][step] > 0) return; // 이미 찍혀 있으면 그대로 둔다 (드래그 중 소리가 반복되지 않게)
+    pushHistory();
     const span = Math.min(currentDur, STEPS - step);
     for(let s=step; s<step+span; s++){ cells[lane][s] = 0; cellTypes[lane][s] = 'normal'; }
     cells[lane][step] = span;
-    cellTypes[lane][step] = isSlide ? 'slide' : 'normal';
-    playNote(lane);
+    cellTypes[lane][step] = noteType || 'normal';
+    playNote(lane, undefined, TYPE_BEND[noteType]);
   }else{
     if(cells[lane][step] > 0){
+      pushHistory();
       cells[lane][step] = 0;
       cellTypes[lane][step] = 'normal';
     }else{
@@ -326,7 +498,7 @@ function paintCell(lane, step, add, isSlide){
       for(let k=1; k<MAX_DUR; k++){
         const s = step - k;
         if(s < 0) break;
-        if(cells[lane][s] > k){ cells[lane][s] = 0; cellTypes[lane][s] = 'normal'; break; }
+        if(cells[lane][s] > k){ pushHistory(); cells[lane][s] = 0; cellTypes[lane][s] = 'normal'; break; }
       }
     }
   }
@@ -337,12 +509,16 @@ function refreshGrid(){
   document.querySelectorAll('.cell').forEach(cellEl=>{
     const lane = +cellEl.dataset.lane, step = +cellEl.dataset.step;
     const v = cells[lane][step];
-    const isSlide = cellTypes[lane][step] === 'slide';
-    cellEl.classList.toggle('on', v > 0);
+    const type = cellTypes[lane][step];
+    const isOn = v > 0;
+    cellEl.classList.toggle('on', isOn);
     cellEl.classList.toggle('dur2', v === 2);
     cellEl.classList.toggle('dur4', v === 4);
-    cellEl.classList.toggle('slide', v > 0 && isSlide);
-    cellEl.textContent = (v > 0 && isSlide) ? '///' : '';
+    cellEl.classList.toggle('tremolo', isOn && type === 'tremolo');
+    cellEl.classList.toggle('semitone', isOn && type === 'semitone');
+    cellEl.classList.toggle('step', isOn && type === 'step');
+    cellEl.classList.toggle('selected', isOn && selectedCells.has(cellKey(lane, step)));
+    cellEl.textContent = (isOn && TYPE_MARK[type]) ? TYPE_MARK[type] : '';
     cellEl.style.display = 'inline-block';
   });
   // 긴 노트에 가려지는 뒤쪽 칸들은 숨긴다
@@ -357,7 +533,9 @@ function refreshGrid(){
 }
 
 function clearGrid(){
+  pushHistory();
   for(let lane=0;lane<13;lane++){ cells[lane].fill(0); cellTypes[lane].fill('normal'); }
+  selectedCells.clear();
   refreshGrid();
   document.getElementById('exportBox').value = '';
 }
@@ -367,7 +545,7 @@ function buildOrderedSong(){
   const events = [];
   for(let lane=0;lane<13;lane++){
     for(let step=0;step<STEPS;step++){
-      if(cells[lane][step] > 0){ events.push({ lane, step, durSteps: cells[lane][step], slide: cellTypes[lane][step]==='slide' }); }
+      if(cells[lane][step] > 0){ events.push({ lane, step, durSteps: cells[lane][step], type: cellTypes[lane][step] }); }
     }
   }
   events.sort((a,b)=> a.step - b.step);
@@ -380,7 +558,7 @@ function playSequence(){
   const events = buildOrderedSong();
   if(events.length===0) return;
   events.forEach(ev=>{
-    setTimeout(()=>playNote(ev.lane), ev.step * stepMs);
+    setTimeout(()=>playNote(ev.lane, undefined, TYPE_BEND[ev.type]), ev.step * stepMs);
   });
 }
 
@@ -394,24 +572,22 @@ function exportCode(){
   // 게임의 SONG 형식은 '다음 음까지 몇 박 걸리는지'가 기준이라서,
   // 그린 음표의 길이가 아니라 다음 음까지의 실제 칸 간격(빈 칸=쉼표 포함)을 박(beats) 단위로 환산해서 쓴다.
   // 같은 칸(세로로 겹치는 음)은 간격이 0이 되어야 동시에 울린다 — 그래서 최소값을 강제하지 않는다.
-  let hasSlide = false;
+  // 반음 UP('A') · 한 키 UP('S') · 트레몰로('///') 표시가 찍힌 음은 세 번째 값(마크)으로 함께 내보내서,
+  // 실제 연주 화면에서 다가오는 점 위에 그 표시가 그대로 나타나게 한다.
   let lines = events.map((ev, i) => {
     const nextStep = (i < events.length - 1) ? events[i+1].step : (ev.step + ev.durSteps);
     const gapSteps = nextStep - ev.step; // 0이면 다음 음과 동시에 울림
     const gapBeats = gapSteps * STEP_BEAT;
-    if(ev.slide) hasSlide = true;
-    return `  [${ev.lane},${gapBeats}]` + (ev.slide ? ' /* slide */' : '');
+    const mark = TYPE_MARK[ev.type];
+    return mark ? `  [${ev.lane},${gapBeats},'${mark}']` : `  [${ev.lane},${gapBeats}]`;
   }).join(',\n');
-  const note = hasSlide
-    ? '\n// 참고: 주석 처리된 /* slide */ 표시는 편집기에서만 보이는 참고용이며, 게임 SONG 형식([lane, beats])에는 영향을 주지 않아요.'
-    : '';
   const code =
 `// BPM ${bpm}, 한 박 = ${(60000/bpm).toFixed(0)}ms
 const BPM = ${bpm};
 const BEAT_MS = 60000 / BPM;
 const SONG = [
 ${lines}
-];${note}`;
+];`;
   document.getElementById('exportBox').value = code;
 }
 
@@ -467,7 +643,7 @@ function startTestPlay(){
   testNotes = events.map((ev, i) => {
     const nextStep = (i < events.length-1) ? events[i+1].step : (ev.step + ev.durSteps);
     const gapSteps = nextStep - ev.step; // 0이면 다음 음과 동시에 울림 (같은 칸=세로로 겹치는 음)
-    const note = { lane: ev.lane, hitTime: t, state:'pending', el:null, spawned:false };
+    const note = { lane: ev.lane, hitTime: t, state:'pending', el:null, spawned:false, mark: TYPE_MARK[ev.type] || null };
     t += gapSteps * stepMs;
     return note;
   });
@@ -509,7 +685,8 @@ function testTick(now, totalMs){
     const untilHit = note.hitTime - elapsed;
     if(!note.spawned && untilHit <= LEAD_MS){
       const el = document.createElement('div');
-      el.className = 'test-note' + (TEAL_LANES.has(note.lane) ? ' teal' : '');
+      el.className = 'test-note' + (TEAL_LANES.has(note.lane) ? ' teal' : '') + (note.mark ? ' mark' : '');
+      if(note.mark) el.textContent = note.mark;
       stage.appendChild(el);
       note.el = el;
       note.spawned = true;
