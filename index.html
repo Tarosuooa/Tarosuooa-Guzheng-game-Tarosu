@@ -943,7 +943,8 @@ function recordScore(){
     if(btn) btn.textContent = '✅ 기록 완료';
   }).catch(e=>{
     console.error('점수 기록 실패', e);
-    if(statusEl) statusEl.textContent = '기록에 실패했어요. 다시 시도해주세요.';
+    const codeMsg = e && e.code ? `(${e.code})` : '';
+    if(statusEl) statusEl.textContent = `기록에 실패했어요 ${codeMsg}. permission-denied라면 Firestore 보안 규칙 설정이 필요해요.`;
     if(btn) btn.disabled = false;
   });
 }
@@ -962,36 +963,28 @@ function restartGame(){
   startBtn.disabled = false;
 }
 
-/* ===================== 곡 목록 (지금은 프로토타입이라 이 브라우저의 localStorage에 저장) =====================
-   나중에 실제 게시판이 만들어지면, 여기 저장/불러오기 부분만 Firestore 호출로 바꾸면
-   다른 사람들과도 곡을 공유할 수 있게 된다. */
-const SONG_STORE_KEY = 'tarodang_guzheng_songs';
+/* ===================== 곡 목록 (Firestore에 저장 — 모든 기기에서 동일하게 보임) ===================== */
+const SONGS_COLLECTION = 'songs';
+const SONG_STORE_KEY = 'tarodang_guzheng_songs'; // 예전 버전(이 브라우저에만 저장)의 곡 데이터 — 서버로 옮길 때만 사용
+let cachedSongList = []; // 마지막으로 불러온 곡 목록 (플레이/수정 등에서 다시 불러오지 않고 재사용)
 
-function loadSongList(){
+async function fetchSongList(){
+  if(!fbDb) return [];
   try{
-    const raw = localStorage.getItem(SONG_STORE_KEY);
-    return raw ? JSON.parse(raw) : [];
+    const snap = await fbDb.collection(SONGS_COLLECTION).orderBy('createdAt', 'desc').get();
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
   }catch(e){
-    console.error('곡 목록 로드 실패', e);
+    console.error('곡 목록 불러오기 실패', e);
     return [];
   }
 }
-function saveSongList(list){
-  try{
-    localStorage.setItem(SONG_STORE_KEY, JSON.stringify(list));
-    return true;
-  }catch(e){
-    console.error('곡 목록 저장 실패', e);
-    return false;
-  }
-}
 
-// 페이지를 열었을 때, 곡 목록에 등록되어 있는 '아리랑'(패턴 제작자: 타로수)을 기본 곡으로 적용한다.
-// 아직 그 곡이 등록되어 있지 않은 브라우저에서는 위의 내장 '나비야'가 그대로 기본값으로 남는다.
-function applyDefaultArirangIfAvailable(){
-  const list = loadSongList();
-  const arirang = list.find(s => s.name === '아리랑' && (s.maker || '').includes('타로수'))
-               || list.find(s => s.name === '아리랑');
+// 페이지를 열었을 때, 서버에 등록되어 있는 '아리랑'(패턴 제작자: 타로수)을 기본 곡으로 적용한다.
+// 아직 그 곡이 등록되어 있지 않다면 위의 내장 '나비야'가 그대로 기본값으로 남는다.
+async function applyDefaultArirangIfAvailable(){
+  cachedSongList = await fetchSongList();
+  const arirang = cachedSongList.find(s => s.name === '아리랑' && (s.maker || '').includes('타로수'))
+               || cachedSongList.find(s => s.name === '아리랑');
   if(!arirang) return;
   BPM = arirang.bpm;
   BEAT_MS = 60000 / BPM;
@@ -1029,15 +1022,20 @@ function closeSongList(){
   document.getElementById('songListModal').classList.remove('show');
 }
 
-function renderSongList(){
+async function renderSongList(){
   const wrap = document.getElementById('songListItems');
-  const list = loadSongList();
+  wrap.innerHTML = '<div class="song-empty">불러오는 중...</div>';
+  cachedSongList = await fetchSongList();
+  const list = cachedSongList;
+  const migrateBtn = legacyLocalSongsExist()
+    ? `<button class="btn small ghost" style="margin-bottom:10px;" onclick="migrateLocalSongsToServer()">📤 이 기기에만 있던 곡 서버로 올리기</button>`
+    : '';
   if(list.length === 0){
-    wrap.innerHTML = '<div class="song-empty">아직 등록된 곡이 없어요. \'곡 등록\'으로 첫 곡을 올려보세요!</div>';
+    wrap.innerHTML = migrateBtn + '<div class="song-empty">아직 등록된 곡이 없어요. \'곡 등록\'으로 첫 곡을 올려보세요!</div>';
     return;
   }
   const myUid = (fbAuth && fbAuth.currentUser) ? fbAuth.currentUser.uid : null;
-  wrap.innerHTML = list.map(s => `
+  wrap.innerHTML = migrateBtn + list.map(s => `
     <div class="song-item">
       <div class="song-item-info">
         <b>${escapeHtml(s.name)}</b>
@@ -1047,21 +1045,55 @@ function renderSongList(){
         <button class="btn small" onclick="applySong('${s.id}')">플레이</button>
         <button class="btn small ghost" onclick="openLeaderboard('${s.id}')">🏆 순위</button>
         ${ (myUid && s.uploaderUid === myUid) ? `<button class="btn small ghost" onclick="openSongEdit('${s.id}')">수정</button>` : '' }
-        <button class="btn small ghost" onclick="deleteSong('${s.id}')">삭제</button>
+        ${ (myUid && s.uploaderUid === myUid) ? `<button class="btn small ghost" onclick="deleteSong('${s.id}')">삭제</button>` : '' }
       </div>
     </div>`).join('');
 }
-// 다른 탭(편집기)에서 곡 목록을 바꿨을 때, 이 탭에도 즉시 반영되게 함
-window.addEventListener('storage', (e)=>{
-  if(e.key === SONG_STORE_KEY) renderSongList();
-});
 function escapeHtml(s){
   return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+// 예전 버전에서 이 브라우저의 localStorage에만 저장해뒀던 곡이 있는지 확인
+function legacyLocalSongsExist(){
+  try{
+    const raw = localStorage.getItem(SONG_STORE_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) && list.length > 0;
+  }catch(e){ return false; }
+}
+// 이 브라우저에만 있던 곡들을 서버(Firestore)로 한 번에 올려서, 다른 기기에서도 보이게 한다
+async function migrateLocalSongsToServer(){
+  if(!fbDb){ showToastMsg('지금은 서버로 옮길 수 없어요.'); return; }
+  if(!fbAuth || !fbAuth.currentUser){ showToastMsg('로그인한 상태여야 옮길 수 있어요.'); return; }
+  let localList;
+  try{
+    const raw = localStorage.getItem(SONG_STORE_KEY);
+    localList = raw ? JSON.parse(raw) : [];
+  }catch(e){ localList = []; }
+  if(localList.length === 0){ showToastMsg('옮길 곡이 없어요.'); return; }
+
+  showToastMsg(`${localList.length}곡을 서버로 올리는 중...`);
+  let okCount = 0;
+  for(const s of localList){
+    try{
+      await fbDb.collection(SONGS_COLLECTION).add({
+        name: s.name, artist: s.artist || '', maker: s.maker || '',
+        bpm: s.bpm, song: s.song, notesSnapshot: s.notesSnapshot || null,
+        createdAt: s.createdAt || Date.now(),
+        uploaderUid: s.uploaderUid || fbAuth.currentUser.uid
+      });
+      okCount++;
+    }catch(e){
+      console.error('곡 이전 실패:', s.name, e);
+    }
+  }
+  try{ localStorage.removeItem(SONG_STORE_KEY); }catch(e){}
+  showToastMsg(`${okCount}곡을 서버로 올렸어요! 이제 다른 기기에서도 보여요.`);
+  renderSongList();
+}
+
 function applySong(id){
-  const list = loadSongList();
-  const song = list.find(s => s.id === id);
+  const song = cachedSongList.find(s => s.id === id);
   if(!song) return;
   BPM = song.bpm;
   BEAT_MS = 60000 / BPM;
@@ -1073,18 +1105,22 @@ function applySong(id){
   restartGame();
   showToastMsg('곡이 적용되었어요. \'연주 시작\'을 눌러보세요!');
 }
-function deleteSong(id){
+async function deleteSong(id){
   if(!confirm('이 곡을 목록에서 삭제할까요?')) return;
-  const list = loadSongList().filter(s => s.id !== id);
-  saveSongList(list);
-  renderSongList();
+  if(!fbDb) return;
+  try{
+    await fbDb.collection(SONGS_COLLECTION).doc(id).delete();
+    renderSongList();
+  }catch(e){
+    console.error('곡 삭제 실패', e);
+    showToastMsg('삭제에 실패했어요.');
+  }
 }
 
 /* ---------- 곡 수정 (본인이 등록한 곡만) ---------- */
 let editingSongId = null;
 function openSongEdit(id){
-  const list = loadSongList();
-  const song = list.find(s => s.id === id);
+  const song = cachedSongList.find(s => s.id === id);
   if(!song) return;
   const myUid = (fbAuth && fbAuth.currentUser) ? fbAuth.currentUser.uid : null;
   if(!myUid || song.uploaderUid !== myUid){ showToastMsg('본인이 등록한 곡만 수정할 수 있어요.'); return; }
@@ -1098,29 +1134,28 @@ function closeSongEdit(){
   document.getElementById('songEditModal').classList.remove('show');
   editingSongId = null;
 }
-function saveSongEditMeta(){
-  if(!editingSongId) return;
+async function saveSongEditMeta(){
+  if(!editingSongId || !fbDb) return;
   const name = document.getElementById('editSongName').value.trim();
   if(!name){ showToastMsg('곡 이름을 입력해주세요'); return; }
   const artist = document.getElementById('editArtist').value.trim();
   const maker = document.getElementById('editMaker').value.trim();
-  const list = loadSongList();
-  const idx = list.findIndex(s => s.id === editingSongId);
-  if(idx === -1){ showToastMsg('원본 곡을 찾을 수 없어요.'); closeSongEdit(); return; }
-  list[idx].name = name;
-  list[idx].artist = artist;
-  list[idx].maker = maker;
-  saveSongList(list);
-  renderSongList();
-  closeSongEdit();
-  showToastMsg('곡 정보를 저장했어요!');
+  try{
+    await fbDb.collection(SONGS_COLLECTION).doc(editingSongId).update({ name, artist, maker });
+    renderSongList();
+    closeSongEdit();
+    showToastMsg('곡 정보를 저장했어요!');
+  }catch(e){
+    console.error('곡 정보 저장 실패', e);
+    showToastMsg('저장에 실패했어요.');
+  }
 }
 // '곡 편집기에서 수정': 이 곡의 패턴 데이터를 편집기로 넘겨서, 코드 복사 없이 그리드에서 바로 고칠 수 있게 함
+// (편집기는 같은 브라우저의 새 탭으로 열리므로, 이 handoff 값만은 그대로 localStorage를 임시 통로로 사용한다)
 const EDIT_HANDOFF_KEY = 'tarodang_guzheng_edit_payload';
 function openSongInEditor(){
   if(!editingSongId) return;
-  const list = loadSongList();
-  const song = list.find(s => s.id === editingSongId);
+  const song = cachedSongList.find(s => s.id === editingSongId);
   if(!song) return;
   try{
     localStorage.setItem(EDIT_HANDOFF_KEY, JSON.stringify({
@@ -1134,8 +1169,7 @@ function openSongInEditor(){
 
 /* ---------- 곡별 점수 순위표 ---------- */
 async function openLeaderboard(songId){
-  const list = loadSongList();
-  const song = list.find(s => s.id === songId);
+  const song = cachedSongList.find(s => s.id === songId);
   document.getElementById('leaderboardTitle').textContent = (song ? song.name : '이 곡') + ' 순위표';
   const wrap = document.getElementById('leaderboardItems');
   wrap.innerHTML = '<div class="song-empty">불러오는 중...</div>';
@@ -1150,7 +1184,14 @@ async function openLeaderboard(songId){
     renderLeaderboard(rows);
   }catch(e){
     console.error('순위 조회 실패', e);
-    wrap.innerHTML = '<div class="song-empty">순위를 불러오지 못했어요.</div>';
+    const codeMsg = e && e.code ? `(${e.code})` : '';
+    let hint = '';
+    if(e && e.code === 'failed-precondition'){
+      hint = ' Firestore 복합 색인(index)이 아직 안 만들어졌을 수 있어요. 개발자도구(F12) 콘솔에 뜨는 링크를 눌러 색인을 만들어주세요.';
+    }else if(e && e.code === 'permission-denied'){
+      hint = ' Firestore 보안 규칙에서 scores 컬렉션의 읽기(read) 권한을 확인해주세요.';
+    }
+    wrap.innerHTML = `<div class="song-empty">순위를 불러오지 못했어요 ${codeMsg}.${hint}</div>`;
   }
 }
 function closeLeaderboard(){
@@ -1188,6 +1229,10 @@ function formatDateYMD(isoStr){
 }
 
 function openSongRegister(){
+  if(!fbAuth || !fbAuth.currentUser){
+    showToastMsg('로그인한 상태여야 곡을 등록할 수 있어요. (타로당 홈에서 먼저 로그인해주세요)');
+    return;
+  }
   document.getElementById('regSongName').value='';
   document.getElementById('regArtist').value='';
   document.getElementById('regMaker').value='';
@@ -1198,7 +1243,7 @@ function openSongRegister(){
 function closeSongRegister(){
   document.getElementById('songRegisterModal').classList.remove('show');
 }
-function submitSongRegister(){
+async function submitSongRegister(){
   const name = document.getElementById('regSongName').value.trim();
   const artist = document.getElementById('regArtist').value.trim();
   const maker = document.getElementById('regMaker').value.trim();
@@ -1206,6 +1251,7 @@ function submitSongRegister(){
   const errEl = document.getElementById('regError');
   errEl.textContent = '';
 
+  if(!fbAuth || !fbAuth.currentUser){ errEl.textContent = '로그인한 상태여야 곡을 등록할 수 있어요.'; return; }
   if(!name){ errEl.textContent = '곡 이름을 입력해주세요'; return; }
   if(!code){ errEl.textContent = '편집 코드를 붙여넣어주세요'; return; }
 
@@ -1215,19 +1261,22 @@ function submitSongRegister(){
     return;
   }
 
-  const list = loadSongList();
-  list.unshift({
-    id: 'song_' + Date.now().toString(36) + Math.random().toString(36).slice(2,7),
-    name, artist, maker,
-    bpm: parsed.BPM,
-    song: parsed.SONG,
-    createdAt: Date.now(),
-    uploaderUid: (fbAuth && fbAuth.currentUser) ? fbAuth.currentUser.uid : null
-  });
-  saveSongList(list);
-  closeSongRegister();
-  renderSongList();
-  showToastMsg('곡이 등록되었어요!');
+  try{
+    await fbDb.collection(SONGS_COLLECTION).add({
+      name, artist, maker,
+      bpm: parsed.BPM,
+      song: parsed.SONG,
+      notesSnapshot: null,
+      createdAt: Date.now(),
+      uploaderUid: fbAuth.currentUser.uid
+    });
+    closeSongRegister();
+    renderSongList();
+    showToastMsg('곡이 등록되었어요!');
+  }catch(e){
+    console.error('곡 등록 실패', e);
+    errEl.textContent = '등록에 실패했어요.';
+  }
 }
 
 function showToastMsg(msg){
