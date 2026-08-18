@@ -393,11 +393,11 @@ function exportCode(){
   }
   // 게임의 SONG 형식은 '다음 음까지 몇 박 걸리는지'가 기준이라서,
   // 그린 음표의 길이가 아니라 다음 음까지의 실제 칸 간격(빈 칸=쉼표 포함)을 박(beats) 단위로 환산해서 쓴다.
-  // (0.5박 단위 편집을 지원하므로 gap이 0.5 같은 소수로 나올 수 있음)
+  // 같은 칸(세로로 겹치는 음)은 간격이 0이 되어야 동시에 울린다 — 그래서 최소값을 강제하지 않는다.
   let hasSlide = false;
   let lines = events.map((ev, i) => {
     const nextStep = (i < events.length - 1) ? events[i+1].step : (ev.step + ev.durSteps);
-    const gapSteps = Math.max(1, nextStep - ev.step); // 최소 0.5박(1칸) 보장
+    const gapSteps = nextStep - ev.step; // 0이면 다음 음과 동시에 울림
     const gapBeats = gapSteps * STEP_BEAT;
     if(ev.slide) hasSlide = true;
     return `  [${ev.lane},${gapBeats}]` + (ev.slide ? ' /* slide */' : '');
@@ -466,7 +466,7 @@ function startTestPlay(){
   let t = 400;
   testNotes = events.map((ev, i) => {
     const nextStep = (i < events.length-1) ? events[i+1].step : (ev.step + ev.durSteps);
-    const gapSteps = Math.max(1, nextStep - ev.step);
+    const gapSteps = nextStep - ev.step; // 0이면 다음 음과 동시에 울림 (같은 칸=세로로 겹치는 음)
     const note = { lane: ev.lane, hitTime: t, state:'pending', el:null, spawned:false };
     t += gapSteps * stepMs;
     return note;
