@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>아리랑 연주하기 · 타로당</title>
+<title>타로당 13현 고쟁 GAME</title>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
@@ -222,8 +222,8 @@ h1{
 
 <div class="auth-status" id="authStatus"></div>
 
-<h1>13현 고쟁으로 아리랑 연주하기 <span style="font-size:14px; color:var(--ink-soft);">(프로토타입)</span></h1>
-<p class="sub">계이름 점이 오른쪽 세로선에 닿는 순간, 그 줄을 터치하세요</p>
+<h1>타로당 13현 고쟁 GAME</h1>
+<p class="sub">계이름 점이 오른쪽 세로선에 닿는 순간, 그 줄을 터치하세요.<br>반음 UP = 키보드 A + 클릭<br>한 키 UP = 키보드 S + 클릭<br>트레몰로 = 꾹 누르기</p>
 
 <div class="hud">
   <div>점수 <b id="scoreEl">0</b></div>
@@ -260,7 +260,6 @@ h1{
 <div class="guide">
   <b>사용법</b> — 각 줄(계이름) 위로 굵은 점이 왼쪽에서 오른쪽으로 흘러와요. 점이 반짝이는 세로 연주선에 닿는 순간 그 줄(가로 라인) 아무 곳이나 터치/클릭하면 소리가 나며 판정이 떠요.
   타이밍이 정확할수록 PERFECT, 살짝 빗나가면 GOOD, 놓치면 MISS가 떠요. 줄은 아무 때나 눌러도 소리는 나지만, 점수는 정확한 타이밍에만 올라가요.
-  <br>줄을 꾹 누르고 있으면(트레몰로) <b>///</b> 기호와 함께 빠르게 반복 연주돼요.
 </div>
 
 <!-- 곡 목록 모달 -->
@@ -276,7 +275,6 @@ h1{
       <button class="btn small ghost" onclick="window.open('editor/index.html','_blank')">🎼 편집기</button>
     </div>
     <div id="songListItems" class="song-list-items"></div>
-    <p class="local-note">※ 지금은 프로토타입 단계라 이 기기(브라우저)에만 저장돼요. 실제 게시판이 만들어지면 모두와 공유되도록 연결할 예정이에요.</p>
   </div>
 </div>
 
@@ -300,6 +298,27 @@ h1{
       <button class="btn small" onclick="submitSongRegister()">등록하기</button>
       <button class="btn small ghost" onclick="closeSongRegister()">취소</button>
     </div>
+  </div>
+</div>
+
+<!-- 곡 수정 모달 -->
+<div class="modal-overlay" id="songEditModal">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h2>곡 수정</h2>
+      <button class="modal-close" onclick="closeSongEdit()">✕</button>
+    </div>
+    <label>곡 이름</label>
+    <input type="text" id="editSongName" placeholder="예: 나비야">
+    <label>가수</label>
+    <input type="text" id="editArtist" placeholder="예: 전래동요">
+    <label>패턴 제작자</label>
+    <input type="text" id="editMaker" placeholder="예: 타로수">
+    <div class="modal-actions-row" style="margin-top:10px;">
+      <button class="btn small" onclick="saveSongEditMeta()">저장</button>
+      <button class="btn small ghost" onclick="openSongInEditor()">🎼 곡 편집기에서 수정</button>
+    </div>
+    <p class="modal-sub" style="margin-top:8px;">'곡 편집기에서 수정'을 누르면 편집기가 새 탭으로 열리고, 이 곡의 패턴이 그대로 불러와져요. 편집기에서 수정한 뒤 '이 곡에 저장'을 누르면 코드 복사 없이 바로 반영돼요.</p>
   </div>
 </div>
 
@@ -341,7 +360,11 @@ function updateAuthStatusUI(nickname){
 
 if(fbAuth){
   fbAuth.onAuthStateChanged(async (user)=>{
-    if(!user){ updateAuthStatusUI(null); return; }
+    if(!user){
+      updateAuthStatusUI(null);
+      if(typeof renderSongList === 'function') renderSongList(); // 로그아웃 시 '수정' 버튼도 즉시 감춤
+      return;
+    }
     let nickname = user.displayName || '회원';
     try{
       const udoc = await fbDb.collection('users').doc(user.uid).get();
@@ -350,6 +373,7 @@ if(fbAuth){
       console.error('닉네임 조회 실패', e);
     }
     updateAuthStatusUI(nickname);
+    if(typeof renderSongList === 'function') renderSongList(); // 로그인 시 본인 곡에 '수정' 버튼 표시
   });
 }
 </script>
@@ -774,6 +798,7 @@ function renderSongList(){
     wrap.innerHTML = '<div class="song-empty">아직 등록된 곡이 없어요. \'곡 등록\'으로 첫 곡을 올려보세요!</div>';
     return;
   }
+  const myUid = (fbAuth && fbAuth.currentUser) ? fbAuth.currentUser.uid : null;
   wrap.innerHTML = list.map(s => `
     <div class="song-item">
       <div class="song-item-info">
@@ -782,10 +807,15 @@ function renderSongList(){
       </div>
       <div style="display:flex; gap:6px; flex:none;">
         <button class="btn small" onclick="applySong('${s.id}')">플레이</button>
+        ${ (myUid && s.uploaderUid === myUid) ? `<button class="btn small ghost" onclick="openSongEdit('${s.id}')">수정</button>` : '' }
         <button class="btn small ghost" onclick="deleteSong('${s.id}')">삭제</button>
       </div>
     </div>`).join('');
 }
+// 다른 탭(편집기)에서 곡 목록을 바꿨을 때, 이 탭에도 즉시 반영되게 함
+window.addEventListener('storage', (e)=>{
+  if(e.key === SONG_STORE_KEY) renderSongList();
+});
 function escapeHtml(s){
   return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
@@ -808,6 +838,58 @@ function deleteSong(id){
   const list = loadSongList().filter(s => s.id !== id);
   saveSongList(list);
   renderSongList();
+}
+
+/* ---------- 곡 수정 (본인이 등록한 곡만) ---------- */
+let editingSongId = null;
+function openSongEdit(id){
+  const list = loadSongList();
+  const song = list.find(s => s.id === id);
+  if(!song) return;
+  const myUid = (fbAuth && fbAuth.currentUser) ? fbAuth.currentUser.uid : null;
+  if(!myUid || song.uploaderUid !== myUid){ showToastMsg('본인이 등록한 곡만 수정할 수 있어요.'); return; }
+  editingSongId = id;
+  document.getElementById('editSongName').value = song.name || '';
+  document.getElementById('editArtist').value = song.artist || '';
+  document.getElementById('editMaker').value = song.maker || '';
+  document.getElementById('songEditModal').classList.add('show');
+}
+function closeSongEdit(){
+  document.getElementById('songEditModal').classList.remove('show');
+  editingSongId = null;
+}
+function saveSongEditMeta(){
+  if(!editingSongId) return;
+  const name = document.getElementById('editSongName').value.trim();
+  if(!name){ showToastMsg('곡 이름을 입력해주세요'); return; }
+  const artist = document.getElementById('editArtist').value.trim();
+  const maker = document.getElementById('editMaker').value.trim();
+  const list = loadSongList();
+  const idx = list.findIndex(s => s.id === editingSongId);
+  if(idx === -1){ showToastMsg('원본 곡을 찾을 수 없어요.'); closeSongEdit(); return; }
+  list[idx].name = name;
+  list[idx].artist = artist;
+  list[idx].maker = maker;
+  saveSongList(list);
+  renderSongList();
+  closeSongEdit();
+  showToastMsg('곡 정보를 저장했어요!');
+}
+// '곡 편집기에서 수정': 이 곡의 패턴 데이터를 편집기로 넘겨서, 코드 복사 없이 그리드에서 바로 고칠 수 있게 함
+const EDIT_HANDOFF_KEY = 'tarodang_guzheng_edit_payload';
+function openSongInEditor(){
+  if(!editingSongId) return;
+  const list = loadSongList();
+  const song = list.find(s => s.id === editingSongId);
+  if(!song) return;
+  try{
+    localStorage.setItem(EDIT_HANDOFF_KEY, JSON.stringify({
+      songId: song.id, name: song.name, artist: song.artist, maker: song.maker,
+      bpm: song.bpm, song: song.song
+    }));
+  }catch(e){ console.error('편집기로 전달 실패', e); }
+  window.open('editor/index.html', '_blank');
+  closeSongEdit();
 }
 
 function openSongRegister(){
@@ -844,7 +926,8 @@ function submitSongRegister(){
     name, artist, maker,
     bpm: parsed.BPM,
     song: parsed.SONG,
-    createdAt: Date.now()
+    createdAt: Date.now(),
+    uploaderUid: (fbAuth && fbAuth.currentUser) ? fbAuth.currentUser.uid : null
   });
   saveSongList(list);
   closeSongRegister();
