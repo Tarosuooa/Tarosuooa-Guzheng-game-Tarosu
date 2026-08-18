@@ -119,6 +119,11 @@ h1{ font-size:20px; color:var(--wood-deep); font-family:'Nanum Myeongjo',serif; 
   pointer-events:none; display:none;
 }
 
+/* ---------- 관리자 전용: 텍스트 편집 모드 ---------- */
+#textEditToggleBtn{ display:none; position:fixed; top:52px; right:16px; z-index:160; }
+.text-edit-target{ outline:1px dashed #4da6ff; outline-offset:2px; cursor:text; }
+.text-edit-target:focus{ outline:2px solid #2f7dd6; background:rgba(77,166,255,0.08); }
+
 textarea#exportBox{
   width:100%; max-width:960px; margin-top:16px; min-height:140px; padding:12px;
   font-family:monospace; font-size:12.5px; border:1px solid var(--paper-dark); border-radius:6px;
@@ -225,6 +230,7 @@ textarea#exportBox{
 <body>
 
 <div class="auth-status" id="authStatus"></div>
+<button id="textEditToggleBtn" class="btn small ghost" onclick="toggleTextEditMode()">✏️ 텍스트 편집</button>
 
 <h1>타로당 13현 고쟁 GAME 곡 편집기</h1>
 <p class="sub">칸을 클릭해서 음을 찍으면 곡이 만들어져요. 클릭하는 즉시 소리도 미리 들을 수 있어요.<br>다 만들었으면 '재생'으로 확인하고, '코드 내보내기'로 게임에 붙여넣을 코드를 복사하세요.</p>
@@ -361,7 +367,7 @@ function updateAuthStatusUI(nickname){
 
 if(fbAuth){
   fbAuth.onAuthStateChanged(async (user)=>{
-    if(!user){ updateAuthStatusUI(null); return; }
+    if(!user){ updateAuthStatusUI(null); updateAdminUI(null); return; }
     let nickname = user.displayName || '회원';
     try{
       const udoc = await fbDb.collection('users').doc(user.uid).get();
@@ -370,8 +376,91 @@ if(fbAuth){
       console.error('닉네임 조회 실패', e);
     }
     updateAuthStatusUI(nickname);
+    updateAdminUI(user);
   });
 }
+
+const ADMIN_EMAIL = 'tarosu.ooa@gmail.com';
+function updateAdminUI(user){
+  const isAdmin = !!(user && user.email && user.email.toLowerCase() === ADMIN_EMAIL);
+  const btn = document.getElementById('textEditToggleBtn');
+  if(btn) btn.style.display = isAdmin ? 'inline-block' : 'none';
+  if(!isAdmin && typeof textEditModeOn !== 'undefined' && textEditModeOn && typeof toggleTextEditMode === 'function'){
+    toggleTextEditMode();
+  }
+}
+
+/* ===================== 관리자 전용 텍스트 편집 모드 =====================
+   ADMIN_EMAIL 계정으로 로그인한 상태에서만 '✏️ 텍스트 편집' 버튼이 보인다.
+   눌러서 켜면 화면의 고정 문구(제목/안내문/버튼 라벨 등)를 클릭해서 직접 고칠 수 있고,
+   다른 곳을 클릭(포커스 아웃)하면 자동 저장된다. */
+const PAGE_ID = 'editor';
+const TEXT_OVERRIDE_KEY = 'tarodang_guzheng_text_overrides';
+const EDITABLE_SELECTOR = 'h1, .sub, .guide, .modal-box label, .modal-head h2, .toolbar label, button, label';
+const NON_EDITABLE_IDS = new Set([
+  'testScore','testCombo','testJudgment','editBannerText','authStatus',
+  'testCountdownNum','testFinalScore','testFinalCombo',
+  'playBtn'
+]);
+
+function getEditableTextElements(){
+  return Array.from(document.querySelectorAll(EDITABLE_SELECTOR))
+    .filter(el => !NON_EDITABLE_IDS.has(el.id));
+}
+function assignTextKeys(){
+  getEditableTextElements().forEach((el, i)=>{
+    if(!el.dataset.tkey) el.dataset.tkey = PAGE_ID + ':auto' + i;
+  });
+}
+function loadTextOverrides(){
+  try{
+    const raw = localStorage.getItem(TEXT_OVERRIDE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  }catch(e){ return {}; }
+}
+function applyTextOverrides(){
+  assignTextKeys();
+  const overrides = loadTextOverrides();
+  document.querySelectorAll('[data-tkey]').forEach(el=>{
+    const val = overrides[el.dataset.tkey];
+    if(val !== undefined) el.innerHTML = val;
+  });
+}
+function saveTextOverride(el){
+  if(!el.dataset.tkey) return;
+  const overrides = loadTextOverrides();
+  overrides[el.dataset.tkey] = el.innerHTML;
+  try{ localStorage.setItem(TEXT_OVERRIDE_KEY, JSON.stringify(overrides)); }catch(e){ console.error('문구 저장 실패', e); }
+}
+
+let textEditModeOn = false;
+function toggleTextEditMode(){
+  textEditModeOn = !textEditModeOn;
+  document.querySelectorAll('[data-tkey]').forEach(el=>{
+    el.contentEditable = textEditModeOn ? 'true' : 'false';
+    el.classList.toggle('text-edit-target', textEditModeOn);
+    if(el.tagName === 'BUTTON'){
+      if(textEditModeOn){
+        if(el.hasAttribute('onclick')){
+          el.dataset.origOnclick = el.getAttribute('onclick');
+          el.removeAttribute('onclick');
+        }
+      }else if(el.dataset.origOnclick){
+        el.setAttribute('onclick', el.dataset.origOnclick);
+        delete el.dataset.origOnclick;
+      }
+    }
+  });
+  const btn = document.getElementById('textEditToggleBtn');
+  if(btn) btn.textContent = textEditModeOn ? '✅ 편집 종료' : '✏️ 텍스트 편집';
+  if(textEditModeOn) showEditorToast('문구를 클릭해서 고치고, 다른 곳을 클릭하면 자동 저장돼요.');
+}
+document.addEventListener('focusout', (e)=>{
+  if(textEditModeOn && e.target && e.target.dataset && e.target.dataset.tkey){
+    saveTextOverride(e.target);
+  }
+});
+applyTextOverrides();
 </script>
 <script>
 const NOTES = ['A3','B3','D4','E4','F#4','A4','B4','D5','E5','F#5','A5','B5','D6'];
