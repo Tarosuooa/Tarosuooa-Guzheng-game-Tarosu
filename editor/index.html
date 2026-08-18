@@ -516,7 +516,7 @@ function refreshGrid(){
     cellEl.classList.toggle('step', isOn && type === 'step');
     cellEl.classList.toggle('selected', isOn && selectedCells.has(cellKey(lane, step)));
     cellEl.textContent = (isOn && TYPE_MARK[type]) ? TYPE_MARK[type] : '';
-    cellEl.style.display = 'inline-block';
+    cellEl.style.display = ''; // 인라인 스타일을 비워서 CSS(.cell.on.tremolo 등의 display:flex 가운데 정렬)가 그대로 적용되게 함
   });
   // 긴 노트에 가려지는 뒤쪽 칸들은 숨긴다
   document.querySelectorAll('.cell').forEach(cellEl=>{
