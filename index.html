@@ -33,7 +33,7 @@ h1{
 
 .hud{
   display:flex; gap:22px; align-items:center; margin-bottom:14px;
-  font-size:14px; color:var(--ink-soft);
+  font-size:14px; color:var(--ink-soft); width:100%; max-width:900px;
 }
 .hud b{ color:var(--wood); font-size:17px; }
 #judgment{
@@ -215,6 +215,10 @@ h1{
   <div>점수 <b id="scoreEl">0</b></div>
   <div>콤보 <b id="comboEl">0</b></div>
   <div id="judgment">&nbsp;</div>
+  <label style="margin-left:auto; display:flex; align-items:center; gap:6px; font-size:12.5px;">
+    🔊 <input type="range" id="volumeSlider" min="0" max="100" value="20" step="1" oninput="setVolume(this.value)" style="width:90px; vertical-align:middle;">
+    <span id="volumeLabel" style="min-width:30px; display:inline-block;">20%</span>
+  </label>
 </div>
 
 <div class="stage-wrap">
@@ -317,6 +321,13 @@ function buildPluckedBuffer(ctx, freq, duration, damping){
   }
   return buf;
 }
+/* ---------- 볼륨 조절 (기본 20%) ---------- */
+let masterVolume = 0.2;
+function setVolume(v){
+  masterVolume = Math.max(0, Math.min(100, Number(v)||0)) / 100;
+  document.getElementById('volumeLabel').textContent = v + '%';
+}
+
 async function playNote(laneIndex, volume, bend){
   const note = NOTES[laneIndex];
   let freq = NOTE_FREQ[note];
@@ -520,7 +531,7 @@ function tick(now){
 
 function onLaneTap(laneIndex, laneEl){
   const bend = aKeyDown ? 'semitone' : (sKeyDown ? 'step' : null);
-  playNote(laneIndex, 0.4, bend);
+  playNote(laneIndex, masterVolume, bend);
   laneEl.classList.add('flash');
   setTimeout(()=>laneEl.classList.remove('flash'), 120);
   if(!running) return;
@@ -548,19 +559,8 @@ function beginTremolo(laneIndex, laneEl){
   tremoloHoldTimeout = setTimeout(() => {
     tremoloInterval = setInterval(() => {
       onLaneTap(laneIndex, laneEl);
-      showTremoloMark(laneIndex);
     }, 55);
   }, 60);
-}
-function showTremoloMark(laneIndex){
-  const stageRect = stage.getBoundingClientRect();
-  const laneH = stageRect.height / 13;
-  const mark = document.createElement('div');
-  mark.className = 'tremolo-mark';
-  mark.style.top = (laneH*laneIndex + laneH/2) + 'px';
-  mark.textContent = '///';
-  stage.appendChild(mark);
-  setTimeout(()=>mark.remove(), 280);
 }
 function stopTremolo(){
   if(tremoloHoldTimeout){ clearTimeout(tremoloHoldTimeout); tremoloHoldTimeout = null; }
