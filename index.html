@@ -100,6 +100,14 @@ h1{
   z-index:4; pointer-events:none;
 }
 .note.teal{ background:#c9c5bd; border-color:#8f8b83; } /* 회색으로 통일 */
+/* 편집기에서 표시(반음 UP='A', 한 키 UP='S', 트레몰로='///')를 붙여 내보낸 음표는
+   점 대신 그 표시가 그대로 다가오도록 렌더링 */
+.note.mark{
+  background:transparent; border:none; border-radius:0; width:auto; height:auto;
+  padding:0 2px; font-size:13px; font-weight:800; letter-spacing:-1px; white-space:nowrap;
+  color:var(--gold-bright); text-shadow:0 0 6px rgba(220,181,106,0.5);
+}
+.note.mark.teal{ color:#5bd6c9; text-shadow:0 0 6px rgba(91,214,201,0.5); }
 
 .hit-pop{
   position:absolute; top:50%; left:78%; transform:translate(-50%,-50%);
@@ -309,15 +317,23 @@ function buildPluckedBuffer(ctx, freq, duration, damping){
   }
   return buf;
 }
-async function playNote(laneIndex, volume){
+async function playNote(laneIndex, volume, bend){
   const note = NOTES[laneIndex];
-  const freq = NOTE_FREQ[note];
+  let freq = NOTE_FREQ[note];
   if(!freq) return;
+  let cacheKey = note;
+  if(bend === 'semitone'){
+    freq = freq * Math.pow(2, 1/12); // 반음(semitone) 위로
+    cacheKey = note + '#semi';
+  }else if(bend === 'step'){
+    const nextNote = NOTES[laneIndex + 1];
+    if(nextNote && NOTE_FREQ[nextNote]){ freq = NOTE_FREQ[nextNote]; cacheKey = nextNote; } // 한 키(다음 줄 음) 위로
+  }
   try{
     if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
     if(audioCtx.state==='suspended') await audioCtx.resume();
-    let buf = bufferCache[note];
-    if(!buf){ buf = buildPluckedBuffer(audioCtx, freq, 2.2, dampingForFreq(freq)); bufferCache[note]=buf; }
+    let buf = bufferCache[cacheKey];
+    if(!buf){ buf = buildPluckedBuffer(audioCtx, freq, 2.2, dampingForFreq(freq)); bufferCache[cacheKey]=buf; }
     const src = audioCtx.createBufferSource();
     src.buffer = buf;
     const tone = audioCtx.createBiquadFilter();
@@ -328,6 +344,20 @@ async function playNote(laneIndex, volume){
     src.start();
   }catch(e){ console.error(e); }
 }
+
+/* ---------- 반음/한 키 UP 키보드 조작: 'a'를 누른 채 현을 클릭하면 반음, 's'를 누른 채 클릭하면 한 키 위로 ---------- */
+let aKeyDown = false, sKeyDown = false;
+window.addEventListener('keydown', (e)=>{
+  const k = e.key.toLowerCase();
+  if(k==='a') aKeyDown = true;
+  if(k==='s') sKeyDown = true;
+});
+window.addEventListener('keyup', (e)=>{
+  const k = e.key.toLowerCase();
+  if(k==='a') aKeyDown = false;
+  if(k==='s') sKeyDown = false;
+});
+window.addEventListener('blur', ()=>{ aKeyDown=false; sKeyDown=false; });
 
 /* ===================== 나비야 채보 (도레미파솔 계이름을, 악기 오음계 순서에 그대로 대응) ===================== */
 // [줄 인덱스(0~12), 길이(박)]  -  100 BPM, 한 박 = 600ms
@@ -367,6 +397,7 @@ const startBtn = document.getElementById('startBtn');
 
 function buildLanes(){
   stage.querySelectorAll('.lane').forEach(el=>el.remove());
+  laneEls = [];
   for(let i=0;i<13;i++){
     const lane = document.createElement('div');
     lane.className = 'lane';
@@ -381,21 +412,59 @@ function buildLanes(){
     lane.appendChild(label);
     const hitZone = document.createElement('div');
     hitZone.className = 'lane-hit';
-    hitZone.addEventListener('pointerdown', (e)=>{ e.preventDefault(); onLaneTap(i, lane); beginTremolo(i, lane); });
+    hitZone.addEventListener('pointerdown', (e)=>{
+      e.preventDefault();
+      onLaneTap(i, lane);
+      beginTremolo(i, lane);
+      dragPointerActive = true;
+      lastDragLane = i;
+    });
     hitZone.addEventListener('pointerup', stopTremolo);
     hitZone.addEventListener('pointerleave', stopTremolo);
     hitZone.addEventListener('pointercancel', stopTremolo);
     lane.appendChild(hitZone);
     stage.insertBefore(lane, stage.firstChild); // judge-line/end-screen보다 아래에 위치
+    laneEls[i] = lane;
   }
 }
+let laneEls = [];
 buildLanes();
+
+/* ---------- 마우스(손가락)를 누른 채 위/아래로 쭉 훑으면, 지나간 줄들이 순서대로 재생됨 ---------- */
+let dragPointerActive = false;
+let lastDragLane = -1;
+function laneIndexFromClientY(clientY){
+  const stageRect = stage.getBoundingClientRect();
+  const laneH = stageRect.height / 13;
+  const idx = Math.floor((clientY - stageRect.top) / laneH);
+  return Math.max(0, Math.min(12, idx));
+}
+function stepThroughLanes(fromLane, toLane){
+  if(fromLane < 0){ onLaneTap(toLane, laneEls[toLane]); return; }
+  const dir = toLane > fromLane ? 1 : -1;
+  for(let i = fromLane + dir; ; i += dir){
+    onLaneTap(i, laneEls[i]);
+    if(i === toLane) break;
+  }
+}
+window.addEventListener('pointermove', (e)=>{
+  if(!dragPointerActive) return;
+  const idx = laneIndexFromClientY(e.clientY);
+  if(idx !== lastDragLane){
+    stopTremolo(); // 훑는 중에는 한 줄에 멈춰 트레몰로가 걸리지 않도록 초기화
+    stepThroughLanes(lastDragLane, idx);
+    lastDragLane = idx;
+  }
+});
+window.addEventListener('pointerup', ()=>{ dragPointerActive = false; lastDragLane = -1; });
+window.addEventListener('pointercancel', ()=>{ dragPointerActive = false; lastDragLane = -1; });
 
 function scheduleSong(){
   notes = [];
-  let t = 400; // 시작 전 살짝 여유
-  SONG.forEach(([lane, beats])=>{
-    notes.push({ lane, hitTime: t, state:'pending', el:null, spawned:false });
+  let t = LEAD_MS; // 점이 화면 왼쪽 끝에서 시작해 판정선까지 온전히 이동할 시간을 확보 (카운트다운 직후 점이 왼쪽 끝에서 시작하도록)
+  SONG.forEach((entry)=>{
+    const [lane, beats, mark] = entry;
+    notes.push({ lane, hitTime: t, state:'pending', el:null, spawned:false, mark: mark || null });
     t += beats * BEAT_MS;
   });
   return t; // 총 곡 길이(ms)
@@ -409,7 +478,8 @@ function laneRect(laneIndex){
 
 function spawnNoteEl(note){
   const el = document.createElement('div');
-  el.className = 'note' + (TEAL_LANES.has(note.lane) ? ' teal' : '');
+  el.className = 'note' + (TEAL_LANES.has(note.lane) ? ' teal' : '') + (note.mark ? ' mark' : '');
+  if(note.mark) el.textContent = note.mark;
   stage.appendChild(el);
   note.el = el;
 }
@@ -449,7 +519,8 @@ function tick(now){
 }
 
 function onLaneTap(laneIndex, laneEl){
-  playNote(laneIndex, 0.4);
+  const bend = aKeyDown ? 'semitone' : (sKeyDown ? 'step' : null);
+  playNote(laneIndex, 0.4, bend);
   laneEl.classList.add('flash');
   setTimeout(()=>laneEl.classList.remove('flash'), 120);
   if(!running) return;
@@ -610,8 +681,9 @@ function parseSongCode(codeText){
     const fn = new Function(codeText + '\n;return { BPM: BPM, SONG: SONG };');
     const result = fn();
     if(!result || typeof result.BPM !== 'number' || !Array.isArray(result.SONG) || result.SONG.length === 0) return null;
-    const validShape = result.SONG.every(n => Array.isArray(n) && n.length === 2 &&
-      Number.isInteger(n[0]) && n[0] >= 0 && n[0] <= 12 && Number.isFinite(n[1]) && n[1] > 0);
+    const validShape = result.SONG.every(n => Array.isArray(n) && (n.length === 2 || n.length === 3) &&
+      Number.isInteger(n[0]) && n[0] >= 0 && n[0] <= 12 && Number.isFinite(n[1]) && n[1] >= 0 &&
+      (n.length === 2 || typeof n[2] === 'string'));
     if(!validShape) return null;
     return result;
   }catch(e){
