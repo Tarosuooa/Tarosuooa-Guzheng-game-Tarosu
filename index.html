@@ -173,17 +173,17 @@ h1{
 }
 .pad-btn.active{ background:rgba(184,144,63,0.65); border-color:var(--gold-bright); }
 
+/* ---------- 관리자 전용: 텍스트 편집 모드 ---------- */
+#textEditToggleBtn{ display:none; position:fixed; top:52px; right:16px; z-index:160; }
+.text-edit-target{ outline:1px dashed #4da6ff; outline-offset:2px; cursor:text; }
+.text-edit-target:focus{ outline:2px solid #2f7dd6; background:rgba(77,166,255,0.08); }
+
+#rotateWrapper{
+  display:flex; flex-direction:column; align-items:center; width:100%;
+}
+
 @media (max-width:900px){
   .mobile-pad{ display:flex; }
-}
-@media screen and (max-width:900px) and (orientation:portrait){
-  html, body{ margin:0; overflow:hidden; }
-  #rotateWrapper{
-    position:fixed; top:0; left:0; width:100vh; height:100vw;
-    transform: rotate(90deg) translateY(-100%);
-    transform-origin: top left;
-    overflow-y:auto;
-  }
 }
 #countdownNum{
   font-family:'Nanum Myeongjo',serif; font-size:96px; font-weight:800;
@@ -257,6 +257,7 @@ h1{
 <div id="rotateWrapper">
 
 <div class="auth-status" id="authStatus"></div>
+<button id="textEditToggleBtn" class="btn small ghost" onclick="toggleTextEditMode()">✏️ 텍스트 편집</button>
 
 <h1>타로당 13현 고쟁 GAME</h1>
 <p class="sub">계이름 점이 오른쪽 세로선에 닿는 순간, 그 줄을 터치하세요.<br>반음 UP = 키보드 A + 클릭<br>한 키 UP = 키보드 S + 클릭<br>트레몰로 = 꾹 누르기</p>
@@ -285,7 +286,11 @@ h1{
       <h2>연주를 마쳤습니다</h2>
       <p>최종 점수: <b id="finalScore">0</b></p>
       <p id="finalGrade"></p>
-      <button class="btn" style="margin-top:16px;" onclick="restartGame()">다시 연주하기</button>
+      <div style="display:flex; gap:10px; margin-top:16px; flex-wrap:wrap; justify-content:center;">
+        <button class="btn" id="recordScoreBtn" onclick="recordScore()">🏆 점수 기록하기</button>
+        <button class="btn ghost" onclick="restartGame()">다시 연주하기</button>
+      </div>
+      <p id="recordScoreStatus" style="font-size:12px; color:#e4d6bd; margin-top:8px; min-height:16px;"></p>
     </div>
   </div>
 </div>
@@ -296,7 +301,7 @@ h1{
   <button class="btn ghost" onclick="restartGame()">처음부터</button>
   <button class="btn ghost" onclick="openSongList()">📋 곡 목록</button>
 </div>
-<div id="currentSongLabel" style="margin-top:8px; font-size:12.5px; color:var(--ink-soft);">현재 곡: 나비야 (기본 곡)</div>
+<div id="currentSongLabel" style="margin-top:8px; font-size:12.5px; color:var(--ink-soft);">현재 곡: 아리랑 (또는 나비야 · 기본 곡)</div>
 
 <div class="guide">
   <b>사용법</b> — 각 줄(계이름) 위로 굵은 점이 왼쪽에서 오른쪽으로 흘러와요. 점이 반짝이는 세로 연주선에 닿는 순간 그 줄(가로 라인) 아무 곳이나 터치/클릭하면 소리가 나며 판정이 떠요.
@@ -413,10 +418,21 @@ function updateAuthStatusUI(nickname){
   }
 }
 
+const ADMIN_EMAIL = 'tarosu.ooa@gmail.com';
+function updateAdminUI(user){
+  const isAdmin = !!(user && user.email && user.email.toLowerCase() === ADMIN_EMAIL);
+  const btn = document.getElementById('textEditToggleBtn');
+  if(btn) btn.style.display = isAdmin ? 'inline-block' : 'none';
+  if(!isAdmin && typeof textEditModeOn !== 'undefined' && textEditModeOn && typeof toggleTextEditMode === 'function'){
+    toggleTextEditMode(); // 관리자 계정이 아니게 되면 편집 모드를 강제로 끔
+  }
+}
+
 if(fbAuth){
   fbAuth.onAuthStateChanged(async (user)=>{
     if(!user){
       updateAuthStatusUI(null);
+      updateAdminUI(null);
       if(typeof renderSongList === 'function') renderSongList(); // 로그아웃 시 '수정' 버튼도 즉시 감춤
       return;
     }
@@ -428,9 +444,83 @@ if(fbAuth){
       console.error('닉네임 조회 실패', e);
     }
     updateAuthStatusUI(nickname);
+    updateAdminUI(user);
     if(typeof renderSongList === 'function') renderSongList(); // 로그인 시 본인 곡에 '수정' 버튼 표시
   });
 }
+
+/* ===================== 관리자 전용 텍스트 편집 모드 =====================
+   ADMIN_EMAIL 계정으로 로그인한 상태에서만 '✏️ 텍스트 편집' 버튼이 보인다.
+   눌러서 켜면 화면의 고정 문구(제목/안내문/버튼 라벨 등)를 클릭해서 직접 고칠 수 있고,
+   다른 곳을 클릭(포커스 아웃)하면 자동 저장된다. 점수·콤보처럼 게임이 실시간으로
+   덮어쓰는 텍스트는 편집해도 의미가 없으므로 대상에서 제외한다. */
+const PAGE_ID = 'game';
+const TEXT_OVERRIDE_KEY = 'tarodang_guzheng_text_overrides';
+const EDITABLE_SELECTOR = 'h1, .sub, .guide, .modal-sub, .modal-head h2, .toolbar label, button, label';
+const NON_EDITABLE_IDS = new Set([
+  'scoreEl','comboEl','judgment','currentSongLabel','volumeLabel',
+  'countdownNum','finalScore','finalGrade','authStatus',
+  'playBtn','pauseBtn','padA','padS','recordScoreBtn','recordScoreStatus'
+]);
+
+function getEditableTextElements(){
+  return Array.from(document.querySelectorAll(EDITABLE_SELECTOR))
+    .filter(el => !NON_EDITABLE_IDS.has(el.id));
+}
+function assignTextKeys(){
+  getEditableTextElements().forEach((el, i)=>{
+    if(!el.dataset.tkey) el.dataset.tkey = PAGE_ID + ':auto' + i;
+  });
+}
+function loadTextOverrides(){
+  try{
+    const raw = localStorage.getItem(TEXT_OVERRIDE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  }catch(e){ return {}; }
+}
+function applyTextOverrides(){
+  assignTextKeys();
+  const overrides = loadTextOverrides();
+  document.querySelectorAll('[data-tkey]').forEach(el=>{
+    const val = overrides[el.dataset.tkey];
+    if(val !== undefined) el.innerHTML = val;
+  });
+}
+function saveTextOverride(el){
+  if(!el.dataset.tkey) return;
+  const overrides = loadTextOverrides();
+  overrides[el.dataset.tkey] = el.innerHTML;
+  try{ localStorage.setItem(TEXT_OVERRIDE_KEY, JSON.stringify(overrides)); }catch(e){ console.error('문구 저장 실패', e); }
+}
+
+let textEditModeOn = false;
+function toggleTextEditMode(){
+  textEditModeOn = !textEditModeOn;
+  document.querySelectorAll('[data-tkey]').forEach(el=>{
+    el.contentEditable = textEditModeOn ? 'true' : 'false';
+    el.classList.toggle('text-edit-target', textEditModeOn);
+    if(el.tagName === 'BUTTON'){
+      if(textEditModeOn){
+        if(el.hasAttribute('onclick')){
+          el.dataset.origOnclick = el.getAttribute('onclick');
+          el.removeAttribute('onclick'); // 편집 중 실수로 버튼 기능이 눌리지 않도록 잠시 해제
+        }
+      }else if(el.dataset.origOnclick){
+        el.setAttribute('onclick', el.dataset.origOnclick);
+        delete el.dataset.origOnclick;
+      }
+    }
+  });
+  const btn = document.getElementById('textEditToggleBtn');
+  if(btn) btn.textContent = textEditModeOn ? '✅ 편집 종료' : '✏️ 텍스트 편집';
+  if(textEditModeOn) showToastMsg('문구를 클릭해서 고치고, 다른 곳을 클릭하면 자동 저장돼요.');
+}
+document.addEventListener('focusout', (e)=>{
+  if(textEditModeOn && e.target && e.target.dataset && e.target.dataset.tkey){
+    saveTextOverride(e.target);
+  }
+});
+applyTextOverrides();
 </script>
 <script>
 /* ===================== 고쟁 13현 음정 (타로당 홈 화면과 동일한 음계) ===================== */
@@ -821,16 +911,41 @@ function endGame(){
   endScreen.classList.add('show');
   startBtn.disabled = false;
 
-  // 로그인 상태면 이 곡의 순위표에 점수를 기록
-  if(fbDb && fbAuth && fbAuth.currentUser && currentSongId){
-    fbDb.collection('scores').add({
-      songId: currentSongId,
-      uid: fbAuth.currentUser.uid,
-      nickname: currentNickname || '회원',
-      score: score,
-      date: new Date().toISOString()
-    }).catch(e => console.error('점수 기록 실패', e));
+  // '점수 기록하기' 버튼/상태 문구를 이번 판 기준으로 초기화 (이전 판의 '기록 완료' 표시가 남지 않도록)
+  const recordBtn = document.getElementById('recordScoreBtn');
+  if(recordBtn){ recordBtn.disabled = false; recordBtn.textContent = '🏆 점수 기록하기'; }
+  const statusEl = document.getElementById('recordScoreStatus');
+  if(statusEl) statusEl.textContent = '';
+}
+
+// '점수 기록하기' 버튼을 눌러야만 순위표에 저장됨 (로그인 상태일 때만 가능)
+function recordScore(){
+  const statusEl = document.getElementById('recordScoreStatus');
+  const btn = document.getElementById('recordScoreBtn');
+  if(!fbAuth || !fbAuth.currentUser){
+    if(statusEl) statusEl.textContent = '로그인한 상태여야 점수를 기록할 수 있어요. (타로당 홈에서 먼저 로그인해주세요)';
+    return;
   }
+  if(!fbDb || !currentSongId){
+    if(statusEl) statusEl.textContent = '지금은 점수를 기록할 수 없어요.';
+    return;
+  }
+  if(btn) btn.disabled = true;
+  if(statusEl) statusEl.textContent = '기록하는 중...';
+  fbDb.collection('scores').add({
+    songId: currentSongId,
+    uid: fbAuth.currentUser.uid,
+    nickname: currentNickname || '회원',
+    score: score,
+    date: new Date().toISOString()
+  }).then(()=>{
+    if(statusEl) statusEl.textContent = '순위표에 기록했어요!';
+    if(btn) btn.textContent = '✅ 기록 완료';
+  }).catch(e=>{
+    console.error('점수 기록 실패', e);
+    if(statusEl) statusEl.textContent = '기록에 실패했어요. 다시 시도해주세요.';
+    if(btn) btn.disabled = false;
+  });
 }
 
 function restartGame(){
@@ -870,6 +985,24 @@ function saveSongList(list){
     return false;
   }
 }
+
+// 페이지를 열었을 때, 곡 목록에 등록되어 있는 '아리랑'(패턴 제작자: 타로수)을 기본 곡으로 적용한다.
+// 아직 그 곡이 등록되어 있지 않은 브라우저에서는 위의 내장 '나비야'가 그대로 기본값으로 남는다.
+function applyDefaultArirangIfAvailable(){
+  const list = loadSongList();
+  const arirang = list.find(s => s.name === '아리랑' && (s.maker || '').includes('타로수'))
+               || list.find(s => s.name === '아리랑');
+  if(!arirang) return;
+  BPM = arirang.bpm;
+  BEAT_MS = 60000 / BPM;
+  SONG = arirang.song;
+  currentSongId = arirang.id;
+  const labelEl = document.getElementById('currentSongLabel');
+  if(labelEl){
+    labelEl.textContent = `현재 곡: ${arirang.name} (${arirang.artist || '가수 미상'} · 패턴 ${arirang.maker || '익명'})`;
+  }
+}
+applyDefaultArirangIfAvailable();
 
 // 편집기가 내보낸 코드( const BPM = ...; const SONG = [...]; )를 실제로 해석해서 값을 뽑아낸다
 function parseSongCode(codeText){
