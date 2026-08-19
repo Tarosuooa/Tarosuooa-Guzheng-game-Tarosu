@@ -305,13 +305,15 @@ h1{
 
 /* ---------- 조작법 패널: 한 줄을 30% / 30% / 40%로 나눠 이름·GIF·설명을 배치 ---------- */
 .howto-row{
-  display:flex; width:100%; align-items:stretch; gap:10px;
+  display:flex; width:100%; align-items:center; gap:10px;
   padding:12px 0; border-bottom:1px solid var(--paper-dark);
 }
 .howto-row:last-child{ border-bottom:none; }
-.howto-name{ flex:0 0 20%; max-width:20%; font-size:13.5px; font-weight:700; color:var(--wood-deep); display:flex; align-items:center; white-space:pre-wrap; word-break:break-word; }
+/* display:flex를 쓰면 Enter로 새 줄이 생겼을 때 그 줄이 아래로 쌓이지 않고 옆으로 배치되는 문제가 있어서,
+   일반 블록으로 두고 세로 정렬은 부모(.howto-row)의 align-items:center에 맡긴다 */
+.howto-name{ flex:0 0 20%; max-width:20%; font-size:13.5px; font-weight:700; color:var(--wood-deep); white-space:pre-wrap; word-break:break-word; }
 .howto-gif{ flex:0 0 20%; max-width:20%; display:flex; align-items:center; justify-content:center; }
-.howto-desc{ flex:0 0 60%; max-width:60%; font-size:12.5px; color:var(--ink-soft); display:flex; align-items:center; line-height:1.5; white-space:pre-wrap; word-break:break-word; }
+.howto-desc{ flex:0 0 60%; max-width:60%; font-size:12.5px; color:var(--ink-soft); line-height:1.5; white-space:pre-wrap; word-break:break-word; }
 .howto-name.editable, .howto-desc.editable{ cursor:text; border-radius:4px; padding:2px 4px; }
 .howto-name.editable:hover, .howto-desc.editable:hover{ background:rgba(220,181,106,0.15); }
 .howto-name.editable:focus, .howto-desc.editable:focus{ outline:1px solid var(--gold); background:#fff; }
