@@ -1680,8 +1680,7 @@ async function syncRemoteHowto(){
   const remote = await loadRemoteConfig('howto');
   if(remote){
     try{ localStorage.setItem(HOWTO_STORE_KEY, JSON.stringify(remote)); }catch(e){}
-    const modal = document.getElementById('howtoModal');
-    if(modal && modal.classList.contains('show')) renderHowtoRows(); // 창이 열려 있으면 바로 반영
+    renderHowtoRows(); // 창이 닫혀 있어도 미리 최신 내용으로 갱신해둔다 (열려 있으면 바로 화면에 반영됨)
   }
 }
 syncRemoteHowto();
