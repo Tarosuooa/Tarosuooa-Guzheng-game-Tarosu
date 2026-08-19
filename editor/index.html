@@ -581,7 +581,7 @@ window.addEventListener('keydown', (e)=>{
   if(k==='w'){ selectDurationByKey(2); return; }
   if(k==='e'){ selectDurationByKey(4); return; }
   if(k==='r'){ selectDurationByKey(8); return; }
-  if(k===' ' || e.code==='Space'){ e.preventDefault(); togglePlayPause(); return; }
+  if(k===' ' || e.code==='Space'){ e.preventDefault(); handleSpacebarPress(); return; }
   if((k==='delete'||k==='backspace') && selectedCells.size>0){ e.preventDefault(); deleteSelectedNotes(); return; }
   if(k==='escape' && selectedCells.size>0){ selectedCells.clear(); refreshGrid(); return; }
 });
@@ -730,15 +730,24 @@ function buildGrid(){
         e.preventDefault();
         if(e.button !== 0 && e.button !== 2) return;
         if(e.button === 0 && (e.ctrlKey || e.metaKey)){
-          toggleSelectCell(lane, step); // Ctrl+클릭: 다중 선택
+          toggleSelectCell(lane, step); // Ctrl+클릭: 다중 선택(기존 선택에 추가/해제)
           return;
         }
-        // 선택된 노트 위에서 (Ctrl 없이) 누르면, 그 자리에서 바로 이동 드래그를 시작한다
-        if(e.button === 0 && selectedCells.has(cellKey(lane, step))){
-          movingSelection = true;
-          moveAnchorLane = lane;
-          moveAnchorStep = step;
-          return;
+        if(e.button === 0){
+          const startStep = findNoteStart(lane, step); // 가려진 칸을 클릭해도 그 노트를 찾음
+          if(startStep !== -1){
+            // 이미 있는 노트를 (Ctrl 없이) 클릭하면 무조건 그 노트를 선택 상태로 만든다.
+            // 이미 선택되어 있던 노트라면(다중 선택 포함) 그대로 이동 드래그로 이어간다.
+            if(!selectedCells.has(cellKey(lane, startStep))){
+              selectedCells.clear();
+              selectedCells.add(cellKey(lane, startStep));
+              refreshGrid();
+            }
+            movingSelection = true;
+            moveAnchorLane = lane;
+            moveAnchorStep = startStep;
+            return;
+          }
         }
         if(selectedCells.size > 0){ selectedCells.clear(); refreshGrid(); }
         dragging = true;
@@ -807,17 +816,19 @@ function moveSelectedNotes(deltaLane, deltaStep){
   return true;
 }
 
-function toggleSelectCell(lane, step){
-  // 긴 노트의 가려진 칸을 클릭했으면, 그 노트의 시작 칸을 찾는다
-  let s = step;
-  if(cells[lane][s] === 0){
-    for(let k=1; k<MAX_DUR; k++){
-      const s2 = step - k;
-      if(s2 < 0) break;
-      if(cells[lane][s2] > k){ s = s2; break; }
-    }
+// 클릭한 칸(가려진 칸이어도)이 속한 노트의 '시작 칸' step을 찾는다. 없으면 -1
+function findNoteStart(lane, step){
+  if(cells[lane][step] > 0) return step;
+  for(let k=1; k<MAX_DUR; k++){
+    const s = step - k;
+    if(s < 0) break;
+    if(cells[lane][s] > k) return s;
   }
-  if(cells[lane][s] === 0) return; // 노트가 없는 칸은 선택할 수 없음
+  return -1;
+}
+function toggleSelectCell(lane, step){
+  const s = findNoteStart(lane, step);
+  if(s === -1) return; // 노트가 없는 칸은 선택할 수 없음
   const key = cellKey(lane, s);
   if(selectedCells.has(key)) selectedCells.delete(key); else selectedCells.add(key);
   refreshGrid();
@@ -951,6 +962,19 @@ function updatePlayBtnUI(){
 function togglePlayPause(){
   if(!playState){ startPlaybackFrom(playbackStartStep || 0); return; }
   if(playState.paused){ resumePlayback(); } else { pausePlayback(); }
+}
+// 스페이스바를 짧은 시간 안에 두 번 연달아 누르면(더블 프레스) '일시정지'가 아니라 완전히 '정지'한다
+let lastSpacebarPressAt = 0;
+const SPACEBAR_DOUBLE_PRESS_MS = 400;
+function handleSpacebarPress(){
+  const now = performance.now();
+  if(now - lastSpacebarPressAt <= SPACEBAR_DOUBLE_PRESS_MS){
+    lastSpacebarPressAt = 0; // 정지 처리 후에는 그 다음 스페이스바가 다시 '재생'으로 시작하도록 초기화
+    stopPlayback();
+    return;
+  }
+  lastSpacebarPressAt = now;
+  togglePlayPause();
 }
 function startPlaybackFrom(startStep){
   stopPlayback();
