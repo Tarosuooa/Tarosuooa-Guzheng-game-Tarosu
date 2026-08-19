@@ -167,7 +167,7 @@ h1{ font-size:20px; color:var(--wood-deep); font-family:'Nanum Myeongjo',serif; 
 /* ---------- 관리자 전용: 텍스트 편집 모드 ---------- */
 #textEditToggleBtn{ display:none; position:fixed; top:52px; right:16px; z-index:160; }
 #textFormatToolbar{
-  position:fixed; top:90px; right:16px; z-index:160;
+  display:none; position:fixed; top:90px; right:16px; z-index:250;
   align-items:center; gap:6px; background:#fff; border:1px solid var(--paper-dark);
   border-radius:8px; padding:6px 8px; box-shadow:0 4px 14px rgba(0,0,0,0.18);
 }
@@ -292,7 +292,7 @@ textarea#exportBox{
 
 <div class="auth-status" id="authStatus"></div>
 <button id="textEditToggleBtn" class="btn small ghost" onclick="toggleTextEditMode()">텍스트 편집하기</button>
-<div id="textFormatToolbar" style="display:none;">
+<div id="textFormatToolbar">
   <button type="button" class="fmt-btn" style="font-weight:800;" onmousedown="event.preventDefault()" onclick="applyTextFormat('bold')" title="굵게">B</button>
   <button type="button" class="fmt-btn" style="text-decoration:underline;" onmousedown="event.preventDefault()" onclick="applyTextFormat('underline')" title="밑줄">U</button>
   <span class="fmt-sep"></span>
@@ -490,8 +490,17 @@ function updateAuthStatusUI(nickname){
 }
 
 if(fbAuth){
+  let loginCheckDone = false;
   fbAuth.onAuthStateChanged(async (user)=>{
-    if(!user){ updateAuthStatusUI(null); updateAdminUI(null); return; }
+    if(!user){
+      updateAuthStatusUI(null); updateAdminUI(null);
+      if(!loginCheckDone){
+        loginCheckDone = true;
+        alert('타로당(芋頭堂)에 로그인 중인 회원님들만 편집기에 접속이 가능합니다');
+      }
+      return;
+    }
+    loginCheckDone = true;
     let nickname = user.displayName || '회원';
     try{
       const udoc = await fbDb.collection('users').doc(user.uid).get();
@@ -532,7 +541,8 @@ const NON_EDITABLE_IDS = new Set([
 
 function getEditableTextElements(){
   return Array.from(document.querySelectorAll(EDITABLE_SELECTOR))
-    .filter(el => !NON_EDITABLE_IDS.has(el.id));
+    .filter(el => !NON_EDITABLE_IDS.has(el.id))
+    .filter(el => !el.closest('#textFormatToolbar')); // 서식 도구(B/U/색상) 버튼 자신은 편집 대상에서 제외
 }
 // 요소의 '페이지 전체에서 몇 번째인지'가 아니라, id·onclick 함수명처럼 그 요소 고유의 안정적인 특징으로 키를 만든다.
 // 그런 단서가 없으면(예: 모달 안의 <label>), 가장 가까운 id 있는 조상(그 모달 자신)을 기준 삼아
@@ -564,6 +574,22 @@ function assignTextKeys(){
     el.dataset.tkey = key;
   });
 }
+/* ---------- 관리자 텍스트 수정 내용을 Firestore로도 저장해서, 다른 PC에서도 똑같이 보이게 함 ---------- */
+const REMOTE_CONFIG_COLLECTION = 'siteConfig';
+async function loadRemoteConfig(docId){
+  if(!fbDb) return null;
+  try{
+    const doc = await fbDb.collection(REMOTE_CONFIG_COLLECTION).doc(docId).get();
+    return doc.exists ? doc.data().value : null;
+  }catch(e){ console.error('원격 설정 불러오기 실패', e); return null; }
+}
+async function saveRemoteConfig(docId, value){
+  if(!fbDb) return;
+  try{
+    await fbDb.collection(REMOTE_CONFIG_COLLECTION).doc(docId).set({ value, updatedAt: Date.now() });
+  }catch(e){ console.error('원격 설정 저장 실패', e); }
+}
+
 function loadTextOverrides(){
   try{
     const raw = localStorage.getItem(TEXT_OVERRIDE_KEY);
@@ -578,11 +604,19 @@ function applyTextOverrides(){
     if(val !== undefined) el.innerHTML = val;
   });
 }
+async function syncRemoteTextOverrides(){
+  const remote = await loadRemoteConfig('editorText');
+  if(remote){
+    try{ localStorage.setItem(TEXT_OVERRIDE_KEY, JSON.stringify(remote)); }catch(e){}
+    applyTextOverrides();
+  }
+}
 function saveTextOverride(el){
   if(!el.dataset.tkey) return;
   const overrides = loadTextOverrides();
   overrides[el.dataset.tkey] = el.innerHTML;
   try{ localStorage.setItem(TEXT_OVERRIDE_KEY, JSON.stringify(overrides)); }catch(e){ console.error('문구 저장 실패', e); }
+  saveRemoteConfig('editorText', overrides);
 }
 
 let textEditModeOn = false;
@@ -628,6 +662,7 @@ document.addEventListener('focusout', (e)=>{
   }
 });
 applyTextOverrides();
+syncRemoteTextOverrides();
 </script>
 <script>
 const NOTES = ['A3','B3','D4','E4','F#4','A4','B4','D5','E5','F#5','A5','B5','D6'];
