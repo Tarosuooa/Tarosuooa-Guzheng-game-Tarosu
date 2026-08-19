@@ -192,6 +192,17 @@ h1{
 }
 .pad-btn.active{ background:rgba(184,144,63,0.65); border-color:var(--gold-bright); }
 
+/* 반음(A)/한 키(S) 적용 시 클릭·터치 지점에 뜨는 터지는 이펙트 */
+.tap-burst{
+  position:fixed; width:10px; height:10px; border-radius:50%;
+  pointer-events:none; z-index:500; transform:translate(-50%,-50%);
+  animation:tapBurstAnim 0.45s ease-out forwards;
+}
+@keyframes tapBurstAnim{
+  0%{ width:10px; height:10px; opacity:0.85; }
+  100%{ width:70px; height:70px; opacity:0; }
+}
+
 /* ---------- 관리자 전용: 텍스트 편집 모드 ---------- */
 #textEditToggleBtn{ display:none; position:fixed; top:52px; right:16px; z-index:160; }
 #textFormatToolbar{
@@ -288,7 +299,7 @@ h1{
   border-radius:10px; margin-top:2px;
 }
 .maker-badge.user{ background:#e3ecec; color:#2a5a54; }
-.maker-badge.admin{ background:#f6e6c8; color:#8a5a1e; }
+.maker-badge.admin{ background:#ecdff5; color:#5b2d82; }
 .song-empty{ text-align:center; color:var(--ink-soft); font-size:12.5px; padding:20px 0; }
 .local-note{ font-size:11px; color:var(--ink-soft); margin-top:14px; text-align:center; }
 </style>
@@ -750,7 +761,7 @@ function buildLanes(){
       if(e.pointerType === 'touch'){
         startTouchGesture(e, i, lane);
       }else{
-        onLaneTap(i, lane);
+        onLaneTap(i, lane, false, undefined, {x:e.clientX, y:e.clientY});
         beginTremolo(i, lane);
         startDragGlide(e.pointerId, i);
       }
@@ -787,6 +798,7 @@ const SWIPE_THRESHOLD_PX = 14;
 function startTouchGesture(e, laneIndex, laneEl){
   const pointerId = e.pointerId;
   const startX = e.clientX;
+  let currentY = e.clientY;
   let triggered = false;
 
   function attemptTrigger(currentX){
@@ -801,15 +813,16 @@ function startTouchGesture(e, laneIndex, laneEl){
     }
     cleanup();
     if(bend){
-      onLaneTap(laneIndex, laneEl, false, bend);
+      onLaneTap(laneIndex, laneEl, false, bend, {x:currentX, y:currentY});
     }else{
-      onLaneTap(laneIndex, laneEl); // 그냥 판정선을 탭 — 기존처럼 가상 패드(A/S)를 누르고 있는 상태를 그대로 따름
+      onLaneTap(laneIndex, laneEl, false, undefined, {x:currentX, y:currentY}); // 그냥 판정선을 탭 — 기존처럼 가상 패드(A/S)를 누르고 있는 상태를 그대로 따름
       beginTremolo(laneIndex, laneEl);
     }
     startDragGlide(pointerId, laneIndex);
   }
   function onMove(ev){
     if(ev.pointerId !== pointerId) return;
+    currentY = ev.clientY;
     attemptTrigger(ev.clientX);
   }
   function onUp(ev){
@@ -921,12 +934,28 @@ function tick(now){
   rafId = requestAnimationFrame(tick);
 }
 
-function onLaneTap(laneIndex, laneEl, isTremoloTick, forcedBend){
+// 반음(A)=파란색, 한 키(S)=빨간색으로 클릭·터치 지점에 가볍게 터지는 원형 이펙트를 띄운다
+function spawnBurstEffect(x, y, color){
+  const el = document.createElement('div');
+  el.className = 'tap-burst';
+  el.style.left = x + 'px';
+  el.style.top = y + 'px';
+  el.style.background = color;
+  el.style.boxShadow = '0 0 16px 4px ' + color;
+  document.body.appendChild(el);
+  setTimeout(()=> el.remove(), 480);
+}
+
+function onLaneTap(laneIndex, laneEl, isTremoloTick, forcedBend, coords){
   // forcedBend가 주어지면(모바일 좌우 슬라이드) 그 값을 그대로 쓰고, 아니면 기존처럼 키보드 A/S 상태를 따른다
   const bend = forcedBend !== undefined ? forcedBend : (aKeyDown ? 'semitone' : (sKeyDown ? 'step' : null));
   playNote(laneIndex, masterVolume, bend);
   laneEl.classList.add('flash');
   setTimeout(()=>laneEl.classList.remove('flash'), 120);
+  // 반음(A)/한 키(S)가 적용된 클릭·터치 지점에 파란색/빨간색으로 가볍게 터지는 이펙트를 띄운다
+  if(coords && bend){
+    spawnBurstEffect(coords.x, coords.y, bend === 'semitone' ? '#3d7fe0' : '#e0453f');
+  }
   if(!running) return;
 
   const now = performance.now() - startTime;
