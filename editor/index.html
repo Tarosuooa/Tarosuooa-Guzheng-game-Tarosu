@@ -27,12 +27,21 @@ h1{ font-size:20px; color:var(--wood-deep); font-family:'Nanum Myeongjo',serif; 
 }
 .toolbar label{ font-size:12.5px; color:var(--ink-soft); display:flex; align-items:center; gap:5px; }
 .edit-toolbar{
-  display:flex; gap:10px; align-items:center; flex-wrap:wrap;
-  border:1px solid var(--paper-dark); border-radius:6px; padding:10px 12px 8px; margin:0; width:100%;
+  border:1px solid var(--paper-dark); border-radius:6px; width:100%; overflow:hidden;
 }
-.edit-toolbar legend{
-  padding:0 6px; font-size:11.5px; font-weight:700; color:var(--wood); letter-spacing:0.3px;
+.edit-toolbar-head{
+  display:flex; align-items:center; justify-content:space-between; gap:8px;
+  padding:8px 12px; cursor:pointer; user-select:none;
 }
+.edit-toolbar-head:hover{ background:rgba(220,181,106,0.12); }
+.edit-toolbar-title{ font-size:11.5px; font-weight:700; color:var(--wood); letter-spacing:0.3px; }
+.edit-toolbar-caret{ font-size:12px; color:var(--ink-soft); transition:transform 0.2s; }
+.edit-toolbar.collapsed .edit-toolbar-caret{ transform:rotate(-90deg); }
+.edit-toolbar-body{
+  display:flex; flex-direction:column; gap:8px; padding:0 12px 10px;
+}
+.edit-toolbar.collapsed .edit-toolbar-body{ display:none; }
+.edit-toolbar-row{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 
 /* ---------- 단축키 안내 패널 ---------- */
 .shortcut-row{
@@ -278,23 +287,32 @@ textarea#exportBox{
 </div>
 
 <div class="toolbar">
-  <fieldset class="edit-toolbar">
-    <legend>편집 도구 모음</legend>
-    <label>BPM <input type="number" id="bpmInput" value="100" min="40" max="220"></label>
-    <span style="color:var(--ink-soft); font-size:12.5px;">음 길이:</span>
-    <button class="dur-btn" data-dur="1" onclick="setDuration(1, this)">0.25박</button>
-    <button class="dur-btn" data-dur="2" onclick="setDuration(2, this)">0.5박</button>
-    <button class="dur-btn" data-dur="3" onclick="setDuration(3, this)">0.75박</button>
-    <button class="dur-btn active" data-dur="4" onclick="setDuration(4, this)">1박</button>
-    <button class="dur-btn" data-dur="5" onclick="setDuration(5, this)">1.25박</button>
-    <button class="dur-btn" data-dur="6" onclick="setDuration(6, this)">1.5박</button>
-    <button class="dur-btn" data-dur="7" onclick="setDuration(7, this)">1.75박</button>
-    <button class="dur-btn" data-dur="8" onclick="setDuration(8, this)">2박</button>
-    <span style="color:var(--ink-soft); font-size:12.5px;">음 표시(중복 적용 가능):</span>
-    <button class="note-btn" data-bend="semitone" onclick="toggleBend('semitone', this)">반음 UP</button>
-    <button class="note-btn" data-bend="step" onclick="toggleBend('step', this)">한 키 UP</button>
-    <button class="note-btn" data-type="tremolo" onclick="toggleTremoloMode(this)">트레몰로 추가</button>
-  </fieldset>
+  <div class="edit-toolbar">
+    <div class="edit-toolbar-head" onclick="toggleEditToolbar()">
+      <span class="edit-toolbar-title">편집 도구 모음</span>
+      <span class="edit-toolbar-caret" id="editToolbarCaret">▾</span>
+    </div>
+    <div class="edit-toolbar-body" id="editToolbarBody">
+      <div class="edit-toolbar-row">
+        <label>BPM <input type="number" id="bpmInput" value="100" min="40" max="220"></label>
+        <span style="color:var(--ink-soft); font-size:12.5px;">음 길이:</span>
+        <button class="dur-btn" data-dur="1" onclick="setDuration(1, this)">0.25박</button>
+        <button class="dur-btn" data-dur="2" onclick="setDuration(2, this)">0.5박</button>
+        <button class="dur-btn" data-dur="3" onclick="setDuration(3, this)">0.75박</button>
+        <button class="dur-btn active" data-dur="4" onclick="setDuration(4, this)">1박</button>
+        <button class="dur-btn" data-dur="5" onclick="setDuration(5, this)">1.25박</button>
+        <button class="dur-btn" data-dur="6" onclick="setDuration(6, this)">1.5박</button>
+        <button class="dur-btn" data-dur="7" onclick="setDuration(7, this)">1.75박</button>
+        <button class="dur-btn" data-dur="8" onclick="setDuration(8, this)">2박</button>
+      </div>
+      <div class="edit-toolbar-row">
+        <span style="color:var(--ink-soft); font-size:12.5px;">음 표시(중복 적용 가능):</span>
+        <button class="note-btn" data-bend="semitone" onclick="toggleBend('semitone', this)">반음 UP</button>
+        <button class="note-btn" data-bend="step" onclick="toggleBend('step', this)">한 키 UP</button>
+        <button class="note-btn" data-type="tremolo" onclick="toggleTremoloMode(this)">트레몰로 추가</button>
+      </div>
+    </div>
+  </div>
   <label>🔊 <input type="range" id="volumeSlider" min="0" max="100" value="20" step="1" oninput="setVolume(this.value)" style="width:90px; vertical-align:middle;"><span id="volumeLabel" style="font-size:11.5px; color:var(--ink-soft); min-width:30px; display:inline-block;">20%</span></label>
   <button class="btn small" id="playBtn" onclick="togglePlayPause()">▶ 재생</button>
   <button class="btn small" onclick="startTestPlay()">🎮 테스트 플레이</button>
@@ -855,6 +873,24 @@ function setDuration(d, btn){
   document.querySelectorAll('.dur-btn').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
 }
+// 편집 도구 모음 접기/펼치기 (선택 상태는 기억해뒀다가 다음에 열 때도 유지)
+const EDIT_TOOLBAR_COLLAPSE_KEY = 'tarodang_guzheng_edit_toolbar_collapsed';
+function toggleEditToolbar(){
+  const box = document.querySelector('.edit-toolbar');
+  const collapsed = box.classList.toggle('collapsed');
+  try{ localStorage.setItem(EDIT_TOOLBAR_COLLAPSE_KEY, collapsed ? '1' : '0'); }catch(e){}
+}
+(function applyEditToolbarCollapseState(){
+  try{
+    if(localStorage.getItem(EDIT_TOOLBAR_COLLAPSE_KEY) === '1'){
+      document.addEventListener('DOMContentLoaded', ()=>{
+        const box = document.querySelector('.edit-toolbar');
+        if(box) box.classList.add('collapsed');
+      });
+    }
+  }catch(e){}
+})();
+
 function selectDurationByKey(d){
   const btn = document.querySelector('.dur-btn[data-dur="' + d + '"]');
   if(btn) setDuration(d, btn);
