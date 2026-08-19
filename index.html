@@ -208,7 +208,7 @@ h1{
 /* ---------- 관리자 전용: 텍스트 편집 모드 ---------- */
 #textEditToggleBtn{ display:none; position:fixed; top:52px; right:16px; z-index:160; }
 #textFormatToolbar{
-  display:none; position:fixed; top:90px; right:16px; z-index:160;
+  display:none; position:fixed; top:90px; right:16px; z-index:250;
   align-items:center; gap:6px; background:#fff; border:1px solid var(--paper-dark);
   border-radius:8px; padding:6px 8px; box-shadow:0 4px 14px rgba(0,0,0,0.18);
 }
@@ -312,14 +312,14 @@ h1{
 /* display:flex를 쓰면 Enter로 새 줄이 생겼을 때 그 줄이 아래로 쌓이지 않고 옆으로 배치되는 문제가 있어서,
    일반 블록으로 두고 세로 정렬은 부모(.howto-row)의 align-items:center에 맡긴다 */
 .howto-name{ flex:0 0 20%; max-width:20%; font-size:13.5px; font-weight:700; color:var(--wood-deep); white-space:pre-wrap; word-break:break-word; }
-.howto-gif{ flex:0 0 20%; max-width:20%; display:flex; align-items:center; justify-content:center; }
+.howto-gif{ flex:0 0 20%; max-width:20%; aspect-ratio:4/3; display:flex; align-items:center; justify-content:center; overflow:hidden; }
 .howto-desc{ flex:0 0 60%; max-width:60%; font-size:12.5px; color:var(--ink-soft); line-height:1.5; white-space:pre-wrap; word-break:break-word; }
 .howto-name.editable, .howto-desc.editable{ cursor:text; border-radius:4px; padding:2px 4px; }
 .howto-name.editable:hover, .howto-desc.editable:hover{ background:rgba(220,181,106,0.15); }
 .howto-name.editable:focus, .howto-desc.editable:focus{ outline:1px solid var(--gold); background:#fff; }
-.howto-gif img{ max-width:100%; max-height:110px; border-radius:6px; display:block; }
+.howto-gif img{ width:100%; height:100%; object-fit:cover; border-radius:6px; display:block; }
 .howto-gif-placeholder{
-  width:100%; height:80px; border:1px dashed var(--paper-dark); border-radius:6px;
+  width:100%; height:100%; border:1px dashed var(--paper-dark); border-radius:6px;
   display:flex; align-items:center; justify-content:center; font-size:11.5px; color:var(--ink-soft);
 }
 .howto-gif.editable .howto-gif-placeholder, .howto-gif.editable img{ cursor:pointer; }
@@ -356,7 +356,7 @@ h1{
   <div>점수 <b id="scoreEl">0</b></div>
   <div>콤보 <b id="comboEl">0</b></div>
   <div id="judgment">&nbsp;</div>
-  <button class="btn ghost small-btn" style="margin-left:auto;" onclick="openHowtoModal()">📖 조작법</button>
+  <button class="btn ghost small-btn" style="margin-left:auto;" onclick="openHowtoModal()">조작법</button>
   <label style="display:flex; align-items:center; gap:6px; font-size:12.5px;">
     🔊 <input type="range" id="volumeSlider" min="0" max="100" value="20" step="1" oninput="setVolume(this.value)" style="width:90px; vertical-align:middle;">
     <span id="volumeLabel" style="min-width:30px; display:inline-block;">20%</span>
@@ -579,7 +579,8 @@ const NON_EDITABLE_IDS = new Set([
 
 function getEditableTextElements(){
   return Array.from(document.querySelectorAll(EDITABLE_SELECTOR))
-    .filter(el => !NON_EDITABLE_IDS.has(el.id));
+    .filter(el => !NON_EDITABLE_IDS.has(el.id))
+    .filter(el => !el.closest('#textFormatToolbar')); // 서식 도구(B/U/색상) 버튼 자신은 편집 대상에서 제외 (안 그러면 편집 모드에서 이 버튼들의 onclick이 같이 떼어져 눌러도 반응 없게 됨)
 }
 // 요소의 '페이지 전체에서 몇 번째인지'가 아니라, id·onclick 함수명처럼 그 요소 고유의 안정적인 특징으로 키를 만든다.
 // 그런 단서가 없으면(예: 모달 안의 <label>), 가장 가까운 id 있는 조상(그 모달 자신)을 기준 삼아
@@ -611,6 +612,23 @@ function assignTextKeys(){
     el.dataset.tkey = key;
   });
 }
+/* ---------- 관리자 텍스트/조작법 수정 내용을 Firestore로도 저장해서, 다른 기기에서도 똑같이 보이게 함 ----------
+   localStorage는 '빠른 로컬 캐시'로만 쓰고(새로고침 시 깜빡임 없이 바로 보이게), 실제 기준값은 Firestore에 둔다. */
+const REMOTE_CONFIG_COLLECTION = 'siteConfig';
+async function loadRemoteConfig(docId){
+  if(!fbDb) return null;
+  try{
+    const doc = await fbDb.collection(REMOTE_CONFIG_COLLECTION).doc(docId).get();
+    return doc.exists ? doc.data().value : null;
+  }catch(e){ console.error('원격 설정 불러오기 실패', e); return null; }
+}
+async function saveRemoteConfig(docId, value){
+  if(!fbDb) return;
+  try{
+    await fbDb.collection(REMOTE_CONFIG_COLLECTION).doc(docId).set({ value, updatedAt: Date.now() });
+  }catch(e){ console.error('원격 설정 저장 실패', e); }
+}
+
 function loadTextOverrides(){
   try{
     const raw = localStorage.getItem(TEXT_OVERRIDE_KEY);
@@ -625,11 +643,19 @@ function applyTextOverrides(){
     if(val !== undefined) el.innerHTML = val;
   });
 }
+async function syncRemoteTextOverrides(){
+  const remote = await loadRemoteConfig('gameText');
+  if(remote){
+    try{ localStorage.setItem(TEXT_OVERRIDE_KEY, JSON.stringify(remote)); }catch(e){}
+    applyTextOverrides(); // 다른 기기에서 고친 내용을 화면에 반영
+  }
+}
 function saveTextOverride(el){
   if(!el.dataset.tkey) return;
   const overrides = loadTextOverrides();
   overrides[el.dataset.tkey] = el.innerHTML;
   try{ localStorage.setItem(TEXT_OVERRIDE_KEY, JSON.stringify(overrides)); }catch(e){ console.error('문구 저장 실패', e); }
+  saveRemoteConfig('gameText', overrides); // 다른 기기에도 반영되도록 서버에도 저장 (비동기)
 }
 
 let textEditModeOn = false;
@@ -652,9 +678,16 @@ function toggleTextEditMode(){
   });
   const btn = document.getElementById('textEditToggleBtn');
   if(btn) btn.textContent = textEditModeOn ? '💾 저장' : '텍스트 편집하기';
-  const toolbar = document.getElementById('textFormatToolbar');
-  if(toolbar) toolbar.classList.toggle('show', textEditModeOn);
+  updateFormatToolbarVisibility();
   if(textEditModeOn) showToastMsg('문구를 클릭해서 고치고, 다른 곳을 클릭하면 자동 저장돼요. 글자를 드래그해서 선택하면 위쪽 도구로 굵게/밑줄/색상을 바꿀 수 있어요.');
+}
+// 서식 도구(B/U/색상)는 '텍스트 편집하기' 모드이거나, 관리자가 조작법 창을 열어둔 상태일 때 보여준다
+function updateFormatToolbarVisibility(){
+  const toolbar = document.getElementById('textFormatToolbar');
+  if(!toolbar) return;
+  const howtoModal = document.getElementById('howtoModal');
+  const howtoOpen = howtoModal && howtoModal.classList.contains('show');
+  toolbar.classList.toggle('show', textEditModeOn || (isAdminUser && howtoOpen));
 }
 // 굵게/밑줄/색상 서식 도구: 지금 편집 중인(포커스된) 글자 선택 영역에 적용하고, 바로 저장한다
 function applyTextFormat(cmd){
@@ -675,6 +708,7 @@ document.addEventListener('focusout', (e)=>{
   }
 });
 applyTextOverrides();
+syncRemoteTextOverrides(); // 다른 기기에서 고친 내용이 있으면 불러와서 반영
 </script>
 <script>
 /* ===================== 고쟁 13현 음정 (타로당 홈 화면과 동일한 음계) ===================== */
@@ -1626,18 +1660,30 @@ function loadHowtoOverrides(){
 }
 function saveHowtoOverrides(data){
   try{ localStorage.setItem(HOWTO_STORE_KEY, JSON.stringify(data)); }catch(e){ console.error('조작법 저장 실패', e); }
+  saveRemoteConfig('howto', data); // 다른 기기에도 반영되도록 서버에도 저장 (비동기)
 }
 function getActiveHowtoRows(){
   const saved = loadHowtoOverrides();
   return saved || HOWTO_DEFAULTS.map(r => ({...r}));
 }
+async function syncRemoteHowto(){
+  const remote = await loadRemoteConfig('howto');
+  if(remote){
+    try{ localStorage.setItem(HOWTO_STORE_KEY, JSON.stringify(remote)); }catch(e){}
+    const modal = document.getElementById('howtoModal');
+    if(modal && modal.classList.contains('show')) renderHowtoRows(); // 창이 열려 있으면 바로 반영
+  }
+}
+syncRemoteHowto();
 
 function openHowtoModal(){
   renderHowtoRows();
   document.getElementById('howtoModal').classList.add('show');
+  updateFormatToolbarVisibility();
 }
 function closeHowtoModal(){
   document.getElementById('howtoModal').classList.remove('show');
+  updateFormatToolbarVisibility();
 }
 function renderHowtoRows(){
   const wrap = document.getElementById('howtoListWrap');
@@ -1678,8 +1724,14 @@ function handleHowtoFieldKeydown(e){
   if(isBold){
     e.preventDefault();
     document.execCommand('bold', false, null);
+    return;
   }
-  // Enter는 기본 동작(줄바꿈)을 그대로 둔다 — 별도 처리 없이 다음 줄로 이동됨
+  if(e.key === 'Enter'){
+    // 브라우저 기본 Enter 동작은 브라우저마다 결과가 달라서(줄이 안 넘어가거나 이상하게 쌓이는 등)
+    // 항상 <br>을 직접 삽입해 확실하게 다음 줄로 넘어가도록 한다
+    e.preventDefault();
+    document.execCommand('insertLineBreak', false, null);
+  }
 }
 function stripHtml(html){
   const tmp = document.createElement('div');
