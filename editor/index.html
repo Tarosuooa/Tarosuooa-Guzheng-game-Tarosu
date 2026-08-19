@@ -232,7 +232,7 @@ textarea#exportBox{
 <div class="auth-status" id="authStatus"></div>
 <button id="textEditToggleBtn" class="btn small ghost" onclick="toggleTextEditMode()">텍스트 편집하기</button>
 
-<h1>타로당 13현 고쟁 GAME 곡 편집기</h1>
+<h1 id="pageTitle">타로당 13현 고쟁 GAME 곡 편집기</h1>
 <p class="sub">칸을 클릭해서 음을 찍으면 곡이 만들어져요. 클릭하는 즉시 소리도 미리 들을 수 있어요.<br>다 만들었으면 '재생'으로 확인하고, '코드 내보내기'로 게임에 붙여넣을 코드를 복사하세요.</p>
 
 <!-- 게임의 곡 목록에서 '곡 편집기에서 수정'으로 들어왔을 때만 표시됨 -->
@@ -268,7 +268,7 @@ textarea#exportBox{
 <div class="modal-overlay" id="publishModal">
   <div class="modal-box">
     <div class="modal-head">
-      <h2>곡 정보 입력</h2>
+      <h2 id="publishModalTitle">곡 정보 입력</h2>
       <button class="modal-close" onclick="closePublishModal()">✕</button>
     </div>
     <label>곡 이름</label>
@@ -297,7 +297,7 @@ textarea#exportBox{
     <div class="judge-line"></div>
     <div class="countdown-screen" id="testCountdownScreen"><div id="testCountdownNum">3</div></div>
     <div class="test-end-screen" id="testEndScreen">
-      <h2>테스트 완료</h2>
+      <h2 id="testCompleteTitle">테스트 완료</h2>
       <p>점수 <b id="testFinalScore">0</b> · 최고 콤보 <b id="testFinalCombo">0</b></p>
       <div style="margin-top:14px; display:flex; gap:10px;">
         <button class="btn small" onclick="startTestPlay()">다시 테스트</button>
@@ -407,21 +407,32 @@ function getEditableTextElements(){
   return Array.from(document.querySelectorAll(EDITABLE_SELECTOR))
     .filter(el => !NON_EDITABLE_IDS.has(el.id));
 }
-// 요소의 '몇 번째 위치인지'가 아니라, id·onclick 함수명·class처럼 그 요소 고유의 안정적인 특징으로 키를 만든다.
-// 이렇게 해야 나중에 버튼이 추가/삭제되어 순서가 바뀌어도, 저장해둔 문구가 엉뚱한 자리에 끼어들지 않는다.
+// 요소의 '페이지 전체에서 몇 번째인지'가 아니라, id·onclick 함수명처럼 그 요소 고유의 안정적인 특징으로 키를 만든다.
+// 그런 단서가 없으면(예: 모달 안의 <label>), 가장 가까운 id 있는 조상(그 모달 자신)을 기준 삼아
+// '이 모달 안에서 몇 번째 label인지'로 좁혀서 매긴다 — 페이지의 다른 곳이 바뀌어도 전혀 영향받지 않는다.
+function nearestIdAncestor(el){
+  let cur = el.parentElement;
+  while(cur){
+    if(cur.id) return cur.id;
+    cur = cur.parentElement;
+  }
+  return 'root';
+}
 function stableKeyFor(el, indexFallback){
   if(el.id) return PAGE_ID + ':id:' + el.id;
   const onclick = el.getAttribute('onclick');
   if(onclick) return PAGE_ID + ':fn:' + onclick.replace(/[^a-zA-Z0-9_]/g, '').slice(0, 60);
-  if(el.className) return PAGE_ID + ':cls:' + String(el.className).trim().replace(/\s+/g, '.') + ':' + indexFallback;
-  return PAGE_ID + ':auto' + indexFallback; // 정말 아무 단서도 없을 때만 최후 수단으로 위치를 씀
+  const scope = nearestIdAncestor(el);
+  const clsPart = el.className ? String(el.className).trim().replace(/\s+/g, '.') : el.tagName.toLowerCase();
+  return PAGE_ID + ':scope:' + scope + ':' + clsPart + ':' + indexFallback;
 }
 function assignTextKeys(){
   const seen = {};
   getEditableTextElements().forEach((el)=>{
     const base = stableKeyFor(el, 0);
-    seen[base] = (seen[base] || 0);
-    const key = base.startsWith(PAGE_ID + ':cls:') ? stableKeyFor(el, seen[base]) : base;
+    const isScoped = base.startsWith(PAGE_ID + ':scope:');
+    seen[base] = seen[base] || 0;
+    const key = isScoped ? stableKeyFor(el, seen[base]) : base;
     seen[base]++;
     el.dataset.tkey = key;
   });
