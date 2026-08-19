@@ -584,10 +584,19 @@ async function loadRemoteConfig(docId){
   }catch(e){ console.error('원격 설정 불러오기 실패', e); return null; }
 }
 async function saveRemoteConfig(docId, value){
-  if(!fbDb) return;
+  if(!fbDb){
+    if(typeof showEditorToast === 'function') showEditorToast('⚠️ 다른 기기와 동기화가 꺼져 있어서, 이 기기에만 저장됐어요.');
+    return;
+  }
   try{
     await fbDb.collection(REMOTE_CONFIG_COLLECTION).doc(docId).set({ value, updatedAt: Date.now() });
-  }catch(e){ console.error('원격 설정 저장 실패', e); }
+  }catch(e){
+    console.error('원격 설정 저장 실패', e);
+    const codeMsg = e && e.code ? `(${e.code})` : '';
+    if(typeof showEditorToast === 'function'){
+      showEditorToast(`⚠️ 다른 기기와 동기화 저장에 실패했어요 ${codeMsg}. permission-denied라면 Firestore 규칙에 siteConfig가 게시됐는지 확인해주세요. (이 기기에는 저장됨)`);
+    }
+  }
 }
 
 function loadTextOverrides(){
