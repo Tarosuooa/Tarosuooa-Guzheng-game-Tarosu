@@ -58,9 +58,9 @@ h1{ font-size:20px; color:var(--wood-deep); font-family:'Nanum Myeongjo',serif; 
    해당 클래스를 깜빡할 수 있는 구조적 위험이 있었다. grid는 그런 위험이 없다.) */
 /* 16칸(4박)마다 첫 칸만 살짝 넓게(22px+5px 여백) 반복되는 열 구조 — 원래 디자인(작은 구간 여백)을 그대로 유지하면서
    grid-column-start로 각 칸 위치를 고정하는 방식과 함께 쓴다 */
-.row-cells{ display:grid; grid-template-columns: repeat(16, 27px repeat(15, 22px)); grid-auto-rows:22px; column-gap:2px; align-items:center; }
+.row-cells{ display:grid; grid-template-columns: repeat(16, 27px 22px 22px 22px 22px 22px 22px 22px 22px 22px 22px 22px 22px 22px 22px 22px); grid-auto-rows:22px; column-gap:2px; align-items:center; }
 .cell{
-  width:22px; height:22px; border-radius:3px;
+  height:22px; border-radius:3px; /* 폭은 grid 트랙 크기를 그대로 따름 (span N일 때 여러 칸만큼 자동으로 늘어남) */
   background:rgba(255,255,255,0.06); cursor:pointer; position:relative;
 }
 .cell:hover{ background:rgba(220,181,106,0.25); }
@@ -71,7 +71,7 @@ h1{ font-size:20px; color:var(--wood-deep); font-family:'Nanum Myeongjo',serif; 
 
 /* 재생 구간 시작점을 고르는 룰러 (그리드 맨 위, 그리드와 같이 가로 스크롤됨) */
 .ruler-row{ display:flex; align-items:center; height:14px; margin-bottom:3px; }
-.ruler-cells{ display:grid; grid-template-columns: repeat(16, 27px repeat(15, 22px)); grid-auto-rows:10px; column-gap:2px; }
+.ruler-cells{ display:grid; grid-template-columns: repeat(16, 27px 22px 22px 22px 22px 22px 22px 22px 22px 22px 22px 22px 22px 22px 22px 22px); grid-auto-rows:10px; column-gap:2px; }
 .ruler-cell{
   width:22px; height:10px; border-radius:2px;
   background:rgba(255,255,255,0.06); cursor:pointer;
@@ -1088,6 +1088,12 @@ buildGrid();
 
 /* ===================== 게임 곡 목록에서 '곡 편집기에서 수정'으로 넘어온 경우, 그리드에 자동으로 불러오기 ===================== */
 const SONGS_COLLECTION = 'songs'; // 게임 화면과 동일한 Firestore 컬렉션 (모든 기기에서 공유됨)
+
+// Firestore는 배열 안에 배열을 직접 넣는 걸(중첩 배열) 허용하지 않는다.
+// 그래서 곡 데이터([레인, 박자, 표시?] 튜플들의 배열)는 저장할 때 객체 배열로 바꾼다.
+function songToFirestoreSafe(songArr){
+  return songArr.map(n => ({ l: n[0], b: n[1], m: n[2] || null }));
+}
 const EDIT_HANDOFF_KEY = 'tarodang_guzheng_edit_payload'; // 같은 브라우저 새 탭으로 넘길 때만 쓰는 임시 통로
 let editingSongId = null;
 
@@ -1238,7 +1244,7 @@ async function saveBackToGame(){
   });
   try{
     await fbDb.collection(SONGS_COLLECTION).doc(editingSongId).update({
-      bpm, song: songArr,
+      bpm, song: songToFirestoreSafe(songArr),
       notesSnapshot: captureGridSnapshot() // 다음에 또 수정할 때 블록이 절대 안 바뀌도록 함께 저장
     });
     showEditorToast('게임의 곡 목록에 저장했어요! 게임 탭에서 확인해보세요.');
@@ -1289,7 +1295,7 @@ async function submitPublish(){
   try{
     await fbDb.collection(SONGS_COLLECTION).add({
       name, artist, maker,
-      bpm, song: songArr,
+      bpm, song: songToFirestoreSafe(songArr),
       notesSnapshot: captureGridSnapshot(),
       createdAt: Date.now(),
       uploaderUid: fbAuth.currentUser.uid
