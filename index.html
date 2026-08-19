@@ -140,6 +140,8 @@ h1{
   color:var(--paper);
 }
 .btn.ghost{ background:transparent; color:var(--wood); }
+.btn.small-btn{ font-size:12.5px; padding:6px 14px; }
+#volumeSlider{ accent-color:var(--wood); }
 .btn:disabled{ opacity:0.4; cursor:default; }
 
 .end-screen{
@@ -300,6 +302,30 @@ h1{
 }
 .maker-badge.user{ background:#e3ecec; color:#2a5a54; }
 .maker-badge.admin{ background:#ecdff5; color:#5b2d82; }
+
+/* ---------- 조작법 패널: 한 줄을 30% / 30% / 40%로 나눠 이름·GIF·설명을 배치 ---------- */
+.howto-row{
+  display:flex; width:100%; align-items:stretch; gap:10px;
+  padding:12px 0; border-bottom:1px solid var(--paper-dark);
+}
+.howto-row:last-child{ border-bottom:none; }
+.howto-name{ flex:0 0 20%; max-width:20%; font-size:13.5px; font-weight:700; color:var(--wood-deep); display:flex; align-items:center; }
+.howto-gif{ flex:0 0 20%; max-width:20%; display:flex; align-items:center; justify-content:center; }
+.howto-desc{ flex:0 0 60%; max-width:60%; font-size:12.5px; color:var(--ink-soft); display:flex; align-items:center; line-height:1.5; }
+.howto-name.editable, .howto-desc.editable{ cursor:text; border-radius:4px; padding:2px 4px; }
+.howto-name.editable:hover, .howto-desc.editable:hover{ background:rgba(220,181,106,0.15); }
+.howto-name.editable:focus, .howto-desc.editable:focus{ outline:1px solid var(--gold); background:#fff; }
+.howto-gif img{ max-width:100%; max-height:110px; border-radius:6px; display:block; }
+.howto-gif-placeholder{
+  width:100%; height:80px; border:1px dashed var(--paper-dark); border-radius:6px;
+  display:flex; align-items:center; justify-content:center; font-size:11.5px; color:var(--ink-soft);
+}
+.howto-gif.editable .howto-gif-placeholder, .howto-gif.editable img{ cursor:pointer; }
+.howto-gif.editable img:hover, .howto-gif.editable .howto-gif-placeholder:hover{ outline:2px solid var(--gold); }
+.howto-del-btn{
+  flex:none; background:none; border:none; color:#b23a3a; font-size:16px; cursor:pointer; padding:0 4px;
+  align-self:flex-start;
+}
 .song-empty{ text-align:center; color:var(--ink-soft); font-size:12.5px; padding:20px 0; }
 .local-note{ font-size:11px; color:var(--ink-soft); margin-top:14px; text-align:center; }
 </style>
@@ -328,7 +354,8 @@ h1{
   <div>점수 <b id="scoreEl">0</b></div>
   <div>콤보 <b id="comboEl">0</b></div>
   <div id="judgment">&nbsp;</div>
-  <label style="margin-left:auto; display:flex; align-items:center; gap:6px; font-size:12.5px;">
+  <button class="btn ghost small-btn" style="margin-left:auto;" onclick="openHowtoModal()">📖 조작법</button>
+  <label style="display:flex; align-items:center; gap:6px; font-size:12.5px;">
     🔊 <input type="range" id="volumeSlider" min="0" max="100" value="20" step="1" oninput="setVolume(this.value)" style="width:90px; vertical-align:middle;">
     <span id="volumeLabel" style="min-width:30px; display:inline-block;">20%</span>
   </label>
@@ -445,6 +472,22 @@ h1{
   </div>
 </div>
 
+<!-- 조작법: 관리자는 기능 이름/GIF/설명을 직접 작성·수정할 수 있음 -->
+<div class="modal-overlay" id="howtoModal">
+  <div class="modal-box" style="max-width:720px;">
+    <div class="modal-head">
+      <h2 id="howtoModalTitle">조작법</h2>
+      <button class="modal-close" onclick="closeHowtoModal()">✕</button>
+    </div>
+    <p class="modal-sub" id="howtoAdminHint" style="display:none;">관리자 모드예요. 기능 이름·설명을 클릭해서 고치고, GIF 칸을 클릭해서 이미지 주소를 입력할 수 있어요.</p>
+    <div id="howtoListWrap"></div>
+    <div class="modal-actions-row" style="margin-top:12px;">
+      <button class="btn small ghost" id="howtoAddBtn" onclick="addHowtoRow()" style="display:none;">＋ 항목 추가</button>
+      <button class="btn small ghost" onclick="closeHowtoModal()">닫기</button>
+    </div>
+  </div>
+</div>
+
 <script>
 /* ===================== 타로당 홈(Tarosu-dang)과 로그인 상태 연동 =====================
    같은 origin(tarosuooa.github.io)에서 같은 Firebase 프로젝트를 쓰기 때문에,
@@ -484,13 +527,16 @@ function updateAuthStatusUI(nickname){
 }
 
 const ADMIN_EMAIL = 'tarosu.ooa@gmail.com';
+let isAdminUser = false;
 function updateAdminUI(user){
   const isAdmin = !!(user && user.email && user.email.toLowerCase() === ADMIN_EMAIL);
+  isAdminUser = isAdmin;
   const btn = document.getElementById('textEditToggleBtn');
   if(btn) btn.style.display = isAdmin ? 'inline-block' : 'none';
   if(!isAdmin && typeof textEditModeOn !== 'undefined' && textEditModeOn && typeof toggleTextEditMode === 'function'){
     toggleTextEditMode(); // 관리자 계정이 아니게 되면 편집 모드를 강제로 끔
   }
+  if(typeof renderHowtoRows === 'function') renderHowtoRows(); // 로그인 상태 바뀌면 조작법의 편집 가능 여부도 갱신
 }
 
 if(fbAuth){
@@ -1567,6 +1613,89 @@ async function submitSongRegister(){
     errEl.textContent = `등록에 실패했어요 ${codeMsg}.`;
   }
 }
+
+/* ===================== 조작법 (관리자는 기능 이름/GIF/설명을 직접 작성·수정 가능) ===================== */
+const HOWTO_STORE_KEY = 'tarodang_guzheng_howto_rows';
+const HOWTO_DEFAULTS = [
+  { id:'howto1', name:'현 터치', gif:'', desc:'판정 기준 선(오른쪽 세로선)에 닿는 순간 그 줄을 터치하면 소리가 나며 판정이 떠요.' },
+  { id:'howto2', name:'반음 UP (A)', gif:'', desc:'키보드 A를 누른 채 클릭하거나, 판정선 오른쪽 바깥에서 왼쪽(판정선 방향)으로 슬라이드하면 반음이 올라가요.' },
+  { id:'howto3', name:'한 키 UP (S)', gif:'', desc:'키보드 S를 누른 채 클릭하거나, 판정선 왼쪽 바깥에서 오른쪽(판정선 방향)으로 슬라이드하면 한 키가 올라가요.' },
+  { id:'howto4', name:'트레몰로', gif:'', desc:'줄을 꾹 누르고 있으면 빠르게 반복 연주돼요.' },
+  { id:'howto5', name:'자유 연주', gif:'', desc:'곡 선택 없이 자유롭게 줄을 눌러 소리를 낼 수 있어요.' },
+];
+function loadHowtoOverrides(){
+  try{ const raw = localStorage.getItem(HOWTO_STORE_KEY); return raw ? JSON.parse(raw) : null; }catch(e){ return null; }
+}
+function saveHowtoOverrides(data){
+  try{ localStorage.setItem(HOWTO_STORE_KEY, JSON.stringify(data)); }catch(e){ console.error('조작법 저장 실패', e); }
+}
+function getActiveHowtoRows(){
+  const saved = loadHowtoOverrides();
+  return saved || HOWTO_DEFAULTS.map(r => ({...r}));
+}
+
+function openHowtoModal(){
+  renderHowtoRows();
+  document.getElementById('howtoModal').classList.add('show');
+}
+function closeHowtoModal(){
+  document.getElementById('howtoModal').classList.remove('show');
+}
+function renderHowtoRows(){
+  const wrap = document.getElementById('howtoListWrap');
+  if(!wrap) return;
+  const hint = document.getElementById('howtoAdminHint');
+  const addBtn = document.getElementById('howtoAddBtn');
+  if(hint) hint.style.display = isAdminUser ? 'block' : 'none';
+  if(addBtn) addBtn.style.display = isAdminUser ? 'inline-block' : 'none';
+  const rows = getActiveHowtoRows();
+  wrap.innerHTML = rows.map(r => {
+    const nameAttrs = isAdminUser ? `contenteditable="true" onblur="saveHowtoField('${r.id}','name',this)"` : '';
+    const descAttrs = isAdminUser ? `contenteditable="true" onblur="saveHowtoField('${r.id}','desc',this)"` : '';
+    const gifInner = r.gif
+      ? `<img src="${escapeHtml(r.gif)}" alt="${escapeHtml(r.name)}">`
+      : `<div class="howto-gif-placeholder">${isAdminUser ? 'GIF 추가' : 'GIF 없음'}</div>`;
+    const gifOnClick = isAdminUser ? `onclick="editHowtoGif('${r.id}')"` : '';
+    const delBtn = isAdminUser ? `<button class="howto-del-btn" onclick="deleteHowtoRow('${r.id}')" title="삭제">✕</button>` : '';
+    return `
+    <div class="howto-row">
+      <div class="howto-name${isAdminUser?' editable':''}" ${nameAttrs}>${escapeHtml(r.name)}</div>
+      <div class="howto-gif${isAdminUser?' editable':''}" ${gifOnClick}>${gifInner}</div>
+      <div class="howto-desc${isAdminUser?' editable':''}" ${descAttrs}>${escapeHtml(r.desc)}</div>
+      ${delBtn}
+    </div>`;
+  }).join('');
+}
+function saveHowtoField(id, field, el){
+  const rows = getActiveHowtoRows();
+  const row = rows.find(r => r.id === id);
+  if(!row) return;
+  row[field] = el.textContent.trim();
+  saveHowtoOverrides(rows);
+}
+function editHowtoGif(id){
+  const rows = getActiveHowtoRows();
+  const row = rows.find(r => r.id === id);
+  if(!row) return;
+  const url = prompt('GIF(또는 이미지) 주소를 입력해주세요. 비워두면 삭제돼요.', row.gif || '');
+  if(url === null) return; // 취소
+  row.gif = url.trim();
+  saveHowtoOverrides(rows);
+  renderHowtoRows();
+}
+function addHowtoRow(){
+  const rows = getActiveHowtoRows();
+  rows.push({ id:'howto_' + Date.now().toString(36), name:'새 항목', gif:'', desc:'설명을 입력해주세요.' });
+  saveHowtoOverrides(rows);
+  renderHowtoRows();
+}
+function deleteHowtoRow(id){
+  if(!confirm('이 항목을 삭제할까요?')) return;
+  const rows = getActiveHowtoRows().filter(r => r.id !== id);
+  saveHowtoOverrides(rows);
+  renderHowtoRows();
+}
+document.getElementById('howtoModal').addEventListener('click', (e)=>{ if(e.target.id==='howtoModal') closeHowtoModal(); });
 
 function showToastMsg(msg){
   let toast = document.getElementById('gameToast');
