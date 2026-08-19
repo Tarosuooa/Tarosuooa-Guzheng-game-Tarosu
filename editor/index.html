@@ -1160,7 +1160,8 @@ async function saveBackToGame(){
     showEditorToast('게임의 곡 목록에 저장했어요! 게임 탭에서 확인해보세요.');
   }catch(e){
     console.error('게임에 저장 실패', e);
-    showEditorToast('저장에 실패했어요. 로그인 상태와 본인이 등록한 곡인지 확인해주세요.');
+    const codeMsg = e && e.code ? `(${e.code})` : '';
+    showEditorToast(`저장에 실패했어요 ${codeMsg}. 로그인 상태와 본인이 등록한 곡인지 확인해주세요.`);
   }
 }
 
@@ -1213,7 +1214,14 @@ async function submitPublish(){
     showEditorToast('곡이 등록됐어요! 게임 화면의 곡 목록에서 바로 플레이할 수 있어요.');
   }catch(e){
     console.error('곡 등록 실패', e);
-    errEl.textContent = '등록에 실패했어요.';
+    const codeMsg = e && e.code ? `(${e.code})` : '';
+    let hint = '';
+    if(e && e.code === 'permission-denied'){
+      hint = ' Firestore 보안 규칙에서 songs 컬렉션의 create 권한을 확인해주세요.';
+    }else if(e && e.message && /longer than|exceeds|too large/i.test(e.message)){
+      hint = ' 곡이 너무 길어서(데이터 용량 초과) 저장이 안 됐을 수 있어요.';
+    }
+    errEl.textContent = `등록에 실패했어요 ${codeMsg}.${hint}`;
   }
 }
 
