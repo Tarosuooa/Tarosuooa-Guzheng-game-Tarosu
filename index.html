@@ -259,7 +259,7 @@ h1{
 <div class="auth-status" id="authStatus"></div>
 <button id="textEditToggleBtn" class="btn small ghost" onclick="toggleTextEditMode()">텍스트 편집하기</button>
 
-<h1>타로당 13현 고쟁 GAME</h1>
+<h1 id="pageTitle">타로당 13현 고쟁 GAME</h1>
 <p class="sub">계이름 점이 오른쪽 세로선에 닿는 순간, 그 줄을 터치하세요.<br>반음 UP = 키보드 A + 클릭<br>한 키 UP = 키보드 S + 클릭<br>트레몰로 = 꾹 누르기</p>
 
 <div class="hud">
@@ -283,7 +283,7 @@ h1{
       <button class="btn" style="margin-top:14px;" onclick="togglePause()">▶ 계속하기</button>
     </div>
     <div class="end-screen" id="endScreen">
-      <h2>연주를 마쳤습니다</h2>
+      <h2 id="endScreenTitle">연주를 마쳤습니다</h2>
       <p>최종 점수: <b id="finalScore">0</b></p>
       <p id="finalGrade"></p>
       <div style="display:flex; gap:10px; margin-top:16px; flex-wrap:wrap; justify-content:center;">
@@ -312,7 +312,7 @@ h1{
 <div class="modal-overlay" id="songListModal">
   <div class="modal-box">
     <div class="modal-head">
-      <h2>곡 목록</h2>
+      <h2 id="songListModalTitle">곡 목록</h2>
       <button class="modal-close" onclick="closeSongList()">✕</button>
     </div>
     <p class="modal-sub">직접 만든 곡을 등록하고, 다른 사람이 만든 곡을 골라서 플레이해보세요.</p>
@@ -328,7 +328,7 @@ h1{
 <div class="modal-overlay" id="songRegisterModal">
   <div class="modal-box">
     <div class="modal-head">
-      <h2>곡 등록</h2>
+      <h2 id="songRegisterModalTitle">곡 등록</h2>
       <button class="modal-close" onclick="closeSongRegister()">✕</button>
     </div>
     <label>곡 이름</label>
@@ -351,7 +351,7 @@ h1{
 <div class="modal-overlay" id="songEditModal">
   <div class="modal-box">
     <div class="modal-head">
-      <h2>곡 수정</h2>
+      <h2 id="songEditModalTitle">곡 수정</h2>
       <button class="modal-close" onclick="closeSongEdit()">✕</button>
     </div>
     <label>곡 이름</label>
@@ -461,28 +461,39 @@ const NON_EDITABLE_IDS = new Set([
   'scoreEl','comboEl','judgment','currentSongLabel','volumeLabel',
   'countdownNum','finalScore','finalGrade','authStatus',
   'playBtn','pauseBtn','padA','padS','recordScoreBtn','recordScoreStatus',
-  'textEditToggleBtn'
+  'textEditToggleBtn','leaderboardTitle'
 ]);
 
 function getEditableTextElements(){
   return Array.from(document.querySelectorAll(EDITABLE_SELECTOR))
     .filter(el => !NON_EDITABLE_IDS.has(el.id));
 }
-// 요소의 '몇 번째 위치인지'가 아니라, id·onclick 함수명·class처럼 그 요소 고유의 안정적인 특징으로 키를 만든다.
-// 이렇게 해야 나중에 버튼이 추가/삭제되어 순서가 바뀌어도, 저장해둔 문구가 엉뚱한 자리에 끼어들지 않는다.
+// 요소의 '페이지 전체에서 몇 번째인지'가 아니라, id·onclick 함수명처럼 그 요소 고유의 안정적인 특징으로 키를 만든다.
+// 그런 단서가 없으면(예: 모달 안의 <label>), 가장 가까운 id 있는 조상(그 모달 자신)을 기준 삼아
+// '이 모달 안에서 몇 번째 label인지'로 좁혀서 매긴다 — 페이지의 다른 곳이 바뀌어도 전혀 영향받지 않는다.
+function nearestIdAncestor(el){
+  let cur = el.parentElement;
+  while(cur){
+    if(cur.id) return cur.id;
+    cur = cur.parentElement;
+  }
+  return 'root';
+}
 function stableKeyFor(el, indexFallback){
   if(el.id) return PAGE_ID + ':id:' + el.id;
   const onclick = el.getAttribute('onclick');
   if(onclick) return PAGE_ID + ':fn:' + onclick.replace(/[^a-zA-Z0-9_]/g, '').slice(0, 60);
-  if(el.className) return PAGE_ID + ':cls:' + String(el.className).trim().replace(/\s+/g, '.') + ':' + indexFallback;
-  return PAGE_ID + ':auto' + indexFallback; // 정말 아무 단서도 없을 때만 최후 수단으로 위치를 씀
+  const scope = nearestIdAncestor(el);
+  const clsPart = el.className ? String(el.className).trim().replace(/\s+/g, '.') : el.tagName.toLowerCase();
+  return PAGE_ID + ':scope:' + scope + ':' + clsPart + ':' + indexFallback;
 }
 function assignTextKeys(){
   const seen = {};
   getEditableTextElements().forEach((el)=>{
     const base = stableKeyFor(el, 0);
-    seen[base] = (seen[base] || 0); // 같은 class를 공유하는 요소가 여럿이면 순번을 덧붙여 구분
-    const key = base.startsWith(PAGE_ID + ':cls:') ? stableKeyFor(el, seen[base]) : base;
+    const isScoped = base.startsWith(PAGE_ID + ':scope:');
+    seen[base] = seen[base] || 0; // 같은 범위(모달 등) 안에서 같은 태그/class가 여럿이면 순번을 덧붙여 구분
+    const key = isScoped ? stableKeyFor(el, seen[base]) : base;
     seen[base]++;
     el.dataset.tkey = key;
   });
