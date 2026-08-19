@@ -341,6 +341,7 @@ textarea#exportBox{
   &nbsp;&nbsp;&nbsp;키보드 대신 위쪽 '반음 UP' · '한 키 UP' · '트레몰로 추가' 버튼을 눌러서 모드를 켠 채로 계속 클릭해도 돼요 (버튼은 서로 독립적이라 같이 켤 수 있어요).<br>
   4. 이 표시들은 실제 게임에서 다가오는 점 위에 그대로 나타나고, 표시된 조작(반음/한 키 올려 치기, 트레몰로)을 하지 않으면 MISS 판정이 나요.<br>
   5. <b>Ctrl+클릭</b>으로 여러 음을 선택할 수 있고(다시 Ctrl+클릭하면 해제), <b>Ctrl+A</b>로 전체 선택, 선택된 상태에서 <b>Delete/Backspace</b>로 한 번에 지울 수 있어요. <b>Esc</b>는 선택 해제예요.<br>
+  &nbsp;&nbsp;&nbsp;한 음을 클릭한 뒤 다른 음을 <b>Shift+클릭</b>하면, 그 사이 범위에 있는 음들이 한 번에 선택돼요.<br>
   &nbsp;&nbsp;&nbsp;선택된 음 위에서 그대로 마우스를 누른 채 끌면, 선택된 음들이 함께 원하는 위치(계이름·타이밍)로 이동해요.<br>
   6. <b>Ctrl+Z</b> 되돌리기, <b>Ctrl+Y</b> 다시 실행.<br>
   7. 왼쪽 계이름 글자를 클릭하면 그 음을 바로 들어볼 수 있어요.<br>
@@ -731,7 +732,19 @@ function buildGrid(){
         if(e.button !== 0 && e.button !== 2) return;
         if(e.button === 0 && (e.ctrlKey || e.metaKey)){
           toggleSelectCell(lane, step); // Ctrl+클릭: 다중 선택(기존 선택에 추가/해제)
+          const s = findNoteStart(lane, step);
+          if(s !== -1) lastSelectionAnchor = { lane, step: s };
           return;
+        }
+        if(e.button === 0 && e.shiftKey){
+          // 있는 블록을 Shift+클릭하면, 마지막으로 선택했던 블록과의 사이(사각 범위)를 전부 선택한다.
+          // (빈 칸에 Shift+클릭한 경우는 아래로 흘러내려가 기존의 '트레몰로 찍기' 동작을 그대로 유지한다)
+          const s = findNoteStart(lane, step);
+          if(s !== -1 && lastSelectionAnchor){
+            selectRange(lastSelectionAnchor, { lane, step: s });
+            lastSelectionAnchor = { lane, step: s };
+            return;
+          }
         }
         if(e.button === 0){
           const startStep = findNoteStart(lane, step); // 가려진 칸을 클릭해도 그 노트를 찾음
@@ -743,6 +756,7 @@ function buildGrid(){
               selectedCells.add(cellKey(lane, startStep));
               refreshGrid();
             }
+            lastSelectionAnchor = { lane, step: startStep }; // 다음 Shift+클릭의 기준점으로 기억
             movingSelection = true;
             moveAnchorLane = lane;
             moveAnchorStep = startStep;
@@ -785,7 +799,21 @@ let dragType = 'normal';
 let movingSelection = false;
 let moveAnchorLane = 0;
 let moveAnchorStep = 0;
+let lastSelectionAnchor = null; // {lane, step} - Shift+클릭 범위 선택의 기준점(마지막으로 선택했던 노트)
 document.addEventListener('mouseup', ()=>{ dragging = false; movingSelection = false; });
+
+// anchor 노트와 target 노트가 이루는 사각 범위(레인×타이밍) 안에 있는 노트를 전부 선택한다
+function selectRange(anchor, target){
+  const laneMin = Math.min(anchor.lane, target.lane), laneMax = Math.max(anchor.lane, target.lane);
+  const stepMin = Math.min(anchor.step, target.step), stepMax = Math.max(anchor.step, target.step);
+  selectedCells.clear();
+  for(let lane = laneMin; lane <= laneMax; lane++){
+    for(let step = stepMin; step <= stepMax; step++){
+      if(cells[lane][step] > 0) selectedCells.add(cellKey(lane, step));
+    }
+  }
+  refreshGrid();
+}
 
 // 선택된 노트들을 (deltaLane, deltaStep)만큼 한 번에 옮긴다. 하나라도 그리드 밖으로 나가면 이동을 취소.
 function moveSelectedNotes(deltaLane, deltaStep){
