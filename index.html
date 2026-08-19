@@ -55,6 +55,7 @@ h1{
   background:repeating-linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.02) 1px, transparent 1px, transparent);
   border-radius:6px; overflow:hidden;
   background-color:#3a2416;
+  touch-action:none; /* 모바일에서 터치할 때 브라우저가 스크롤/줌 제스처로 오해해서 화면이 살짝 밀리는 것을 막음 */
 }
 .lane{
   position:absolute; left:0; right:0; height:calc(100% / 13);
@@ -76,7 +77,7 @@ h1{
 }
 .lane-hit{
   position:absolute; top:0; bottom:0; left:0; right:0; cursor:pointer;
-  z-index:5;
+  z-index:5; touch-action:none;
 }
 .lane.flash{ background:rgba(220,181,106,0.18); }
 
@@ -160,7 +161,7 @@ h1{
 /* 무대 정중앙에 크게 뜨는 '연주 시작' 버튼 (아직 시작 전이거나, 처음부터를 눌렀을 때만 보임) */
 .start-overlay{
   position:absolute; inset:0; z-index:15; border-radius:6px;
-  display:flex; align-items:center; justify-content:center;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px;
   background:rgba(20,13,8,0.35);
 }
 .start-overlay.hidden{ display:none; }
@@ -168,6 +169,12 @@ h1{
   font-size:20px; font-weight:800; padding:18px 42px; border-radius:36px;
   box-shadow:0 8px 26px rgba(0,0,0,0.4);
 }
+.free-play-btn{
+  font-size:12.5px; padding:7px 18px; border-radius:20px;
+  background:#c08a5a; border:1px solid #a5734a; color:#fff;
+  box-shadow:0 3px 10px rgba(0,0,0,0.3);
+}
+.free-play-btn:hover{ background:#cc9668; }
 
 .pause-overlay{
   display:none; position:absolute; inset:0; z-index:60; background:rgba(35,29,23,0.72);
@@ -315,6 +322,7 @@ h1{
     <div class="judge-line"></div>
     <div class="start-overlay" id="startOverlay">
       <button class="btn start-btn-big" id="startBtn" onclick="startGame()">▶ 연주 시작</button>
+      <button class="free-play-btn" onclick="startFreePlay()">🎵 자유 연주</button>
     </div>
     <div class="countdown-screen" id="countdownScreen">
       <div id="countdownNum">3</div>
@@ -1024,6 +1032,13 @@ function recordScore(){
     if(statusEl) statusEl.textContent = `기록에 실패했어요 ${codeMsg}. permission-denied라면 Firestore 보안 규칙 설정이 필요해요.`;
     if(btn) btn.disabled = false;
   });
+}
+
+// '자유 연주': 점수 채점이나 카운트다운 없이, 곡 선택 없이 그냥 줄을 눌러 소리만 자유롭게 내볼 수 있게 함
+// (연주 시작 오버레이만 치워서 무대를 누를 수 있게 해주고, 게임 진행 상태는 건드리지 않는다)
+function startFreePlay(){
+  document.getElementById('startOverlay').classList.add('hidden');
+  showToastMsg('자유롭게 줄을 눌러보세요! \'처음부터\'를 누르면 다시 곡 선택 화면으로 돌아가요.');
 }
 
 function restartGame(){
