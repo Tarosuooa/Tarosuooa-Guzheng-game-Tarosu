@@ -252,6 +252,7 @@ textarea#exportBox{
   <button class="dur-btn" data-dur="1" onclick="setDuration(1, this)">0.25박</button>
   <button class="dur-btn" data-dur="2" onclick="setDuration(2, this)">0.5박</button>
   <button class="dur-btn active" data-dur="4" onclick="setDuration(4, this)">1박</button>
+  <button class="dur-btn" data-dur="6" onclick="setDuration(6, this)">1.5박</button>
   <button class="dur-btn" data-dur="8" onclick="setDuration(8, this)">2박</button>
   <span style="color:var(--ink-soft); font-size:12.5px;">음 표시(중복 적용 가능):</span>
   <button class="note-btn" data-bend="semitone" onclick="toggleBend('semitone', this)">반음 UP</button>
@@ -336,7 +337,7 @@ textarea#exportBox{
 <div class="guide">
   <b>사용법</b><br>
   1. 원하는 계이름 줄(왼쪽 표시)에서, 원하는 타이밍(칸)을 클릭하면 노란 점이 찍히고 소리가 나요. 다시 클릭하면 지워져요.<br>
-  2. 음 길이: <b>Q</b>=0.25박, <b>W</b>=0.5박, <b>E</b>=1박, <b>R</b>=2박 (또는 위쪽 버튼 클릭).<br>
+  2. 음 길이: <b>Q</b>=0.25박, <b>W</b>=0.5박, <b>E</b>=1박, <b>R</b>=1.5박, <b>T</b>=2박 (또는 위쪽 버튼 클릭).<br>
   3. <b>Shift+클릭</b>은 <b>///</b>(트레몰로), <b>A+클릭</b>은 <b>A</b>(반음 UP), <b>S+클릭</b>은 <b>S</b>(한 키 UP) 표시로 찍혀요. <b>Shift+A+클릭</b>처럼 동시에 누르면 반음/한 키 UP과 트레몰로를 함께 적용할 수 있어요(A///, S///).<br>
   &nbsp;&nbsp;&nbsp;키보드 대신 위쪽 '반음 UP' · '한 키 UP' · '트레몰로 추가' 버튼을 눌러서 모드를 켠 채로 계속 클릭해도 돼요 (버튼은 서로 독립적이라 같이 켤 수 있어요).<br>
   4. 이 표시들은 실제 게임에서 다가오는 점 위에 그대로 나타나고, 표시된 조작(반음/한 키 올려 치기, 트레몰로)을 하지 않으면 MISS 판정이 나요.<br>
@@ -582,7 +583,8 @@ window.addEventListener('keydown', (e)=>{
   if(k==='q'){ selectDurationByKey(1); return; }
   if(k==='w'){ selectDurationByKey(2); return; }
   if(k==='e'){ selectDurationByKey(4); return; }
-  if(k==='r'){ selectDurationByKey(8); return; }
+  if(k==='r'){ selectDurationByKey(6); return; }
+  if(k==='t'){ selectDurationByKey(8); return; }
   if(k===' ' || e.code==='Space'){ e.preventDefault(); handleSpacebarPress(); return; }
   if((k==='delete'||k==='backspace') && selectedCells.size>0){ e.preventDefault(); deleteSelectedNotes(); return; }
   if(k==='escape' && selectedCells.size>0){ selectedCells.clear(); refreshGrid(); return; }
