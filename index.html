@@ -195,7 +195,7 @@ h1{
 /* ---------- 관리자 전용: 텍스트 편집 모드 ---------- */
 #textEditToggleBtn{ display:none; position:fixed; top:52px; right:16px; z-index:160; }
 #textFormatToolbar{
-  position:fixed; top:90px; right:16px; z-index:160;
+  display:none; position:fixed; top:90px; right:16px; z-index:160;
   align-items:center; gap:6px; background:#fff; border:1px solid var(--paper-dark);
   border-radius:8px; padding:6px 8px; box-shadow:0 4px 14px rgba(0,0,0,0.18);
 }
@@ -283,6 +283,12 @@ h1{
   max-width:15em; word-break:break-word; overflow-wrap:break-word; line-height:1.4;
 } /* 한글/한자/가나 기준 공백 포함 약 15자에서 다음 줄로 넘어감(PC 기준) */
 .song-item-info span{ font-size:11.5px; color:var(--ink-soft); display:block; }
+.maker-badge{
+  display:inline-block; font-size:10.5px; font-weight:700; padding:2px 8px;
+  border-radius:10px; margin-top:2px;
+}
+.maker-badge.user{ background:#e3ecec; color:#2a5a54; }
+.maker-badge.admin{ background:#f6e6c8; color:#8a5a1e; }
 .song-empty{ text-align:center; color:var(--ink-soft); font-size:12.5px; padding:20px 0; }
 .local-note{ font-size:11px; color:var(--ink-soft); margin-top:14px; text-align:center; }
 </style>
@@ -293,7 +299,7 @@ h1{
 
 <div class="auth-status" id="authStatus"></div>
 <button id="textEditToggleBtn" class="btn small ghost" onclick="toggleTextEditMode()">텍스트 편집하기</button>
-<div id="textFormatToolbar" style="display:none;">
+<div id="textFormatToolbar">
   <button type="button" class="fmt-btn" style="font-weight:800;" onmousedown="event.preventDefault()" onclick="applyTextFormat('bold')" title="굵게">B</button>
   <button type="button" class="fmt-btn" style="text-decoration:underline;" onmousedown="event.preventDefault()" onclick="applyTextFormat('underline')" title="밑줄">U</button>
   <span class="fmt-sep"></span>
@@ -742,12 +748,11 @@ function buildLanes(){
     hitZone.addEventListener('pointerdown', (e)=>{
       e.preventDefault();
       if(e.pointerType === 'touch'){
-        startTouchSwipeGesture(e, i, lane);
+        startTouchGesture(e, i, lane);
       }else{
         onLaneTap(i, lane);
         beginTremolo(i, lane);
-        dragPointerActive = true;
-        lastDragLane = i;
+        startDragGlide(e.pointerId, i);
       }
     });
     hitZone.addEventListener('pointerup', stopTremolo);
@@ -761,42 +766,57 @@ function buildLanes(){
 let laneEls = [];
 buildLanes();
 
-/* ---------- 모바일: 현을 누른 채 좌우로 슬라이드하면 A(왼쪽)/S(오른쪽)를 누른 것과 동일하게 판정됨 ----------
-   판정과 소리를 동시에 정확히 내야 하므로, 살짝(SWIPE_DECIDE_MS)만 기다렸다가
-   그 사이에 임계값(SWIPE_THRESHOLD_PX)만큼 옆으로 움직였으면 반음/한 키로, 아니면 그냥 일반 탭으로 확정한다. */
-const SWIPE_THRESHOLD_PX = 14;
-const SWIPE_DECIDE_MS = 55;
-function startTouchSwipeGesture(e, laneIndex, laneEl){
-  const startX = e.clientX;
-  const pointerId = e.pointerId;
-  let decided = false;
+/* ---------- 판정 기준 선을 눌렀을 때만 소리/판정이 나도록 하는 공통 헬퍼 (모바일 터치 전용) ----------
+   데스크톱(마우스)은 기존처럼 줄 아무 곳이나 눌러도 소리가 나되, 모바일 터치는 판정선 근처를 눌러야만 반응한다. */
+const JUDGE_LINE_PCT = 0.78; // .judge-line의 CSS left:78%와 반드시 맞춰야 함
+const JUDGE_TOUCH_TOLERANCE_PX = 34; // 판정선 좌우 이 범위 안에 닿아야 탭으로 인정
+function judgeLineX(){
+  const stageRect = stage.getBoundingClientRect();
+  return stageRect.left + stageRect.width * JUDGE_LINE_PCT;
+}
+function isNearJudgeLine(clientX){
+  return Math.abs(clientX - judgeLineX()) <= JUDGE_TOUCH_TOLERANCE_PX;
+}
 
-  function finalize(bend){
-    if(decided) return;
-    decided = true;
+/* ---------- 모바일 터치 제스처 ----------
+   1) 판정 기준 선 근처에 손가락이 닿는 순간에만 소리/판정이 난다 (그 전까지는 화면 아무 데나 눌러도 무반응).
+   2) 판정선 '바깥'에서 시작해 판정선 '방향으로' 다가와 닿았을 때만 반음(A)/한 키(S)로 인정한다.
+      (판정선에서 시작해 바깥쪽으로 나가는 움직임은 방향 판정에 포함하지 않는다.)
+      바깥 왼쪽 → 판정선(오른쪽으로 다가옴) = 한 키(S), 바깥 오른쪽 → 판정선(왼쪽으로 다가옴) = 반음(A). */
+const SWIPE_THRESHOLD_PX = 14;
+function startTouchGesture(e, laneIndex, laneEl){
+  const pointerId = e.pointerId;
+  const startX = e.clientX;
+  let triggered = false;
+
+  function attemptTrigger(currentX){
+    if(triggered) return;
+    if(!isNearJudgeLine(currentX)) return; // 판정선 근처에 닿기 전에는 아무 일도 일어나지 않음
+    triggered = true;
+    let bend;
+    const traveled = currentX - startX;
+    const startedAwayFromLine = !isNearJudgeLine(startX);
+    if(startedAwayFromLine && Math.abs(traveled) >= SWIPE_THRESHOLD_PX){
+      bend = traveled > 0 ? 'step' : 'semitone'; // 오른쪽으로 다가옴=한 키, 왼쪽으로 다가옴=반음
+    }
     cleanup();
     if(bend){
-      onLaneTap(laneIndex, laneEl, false, bend); // 슬라이드로 방향이 확정된 경우
+      onLaneTap(laneIndex, laneEl, false, bend);
     }else{
-      onLaneTap(laneIndex, laneEl); // 슬라이드가 없으면 기존처럼 가상 패드(A/S)를 누르고 있는 상태를 그대로 따름
-      beginTremolo(laneIndex, laneEl); // 슬라이드가 아니라 그냥 누르고 있으면 트레몰로도 그대로 동작
+      onLaneTap(laneIndex, laneEl); // 그냥 판정선을 탭 — 기존처럼 가상 패드(A/S)를 누르고 있는 상태를 그대로 따름
+      beginTremolo(laneIndex, laneEl);
     }
-    dragPointerActive = true;
-    lastDragLane = laneIndex;
+    startDragGlide(pointerId, laneIndex);
   }
   function onMove(ev){
     if(ev.pointerId !== pointerId) return;
-    const dx = ev.clientX - startX;
-    if(Math.abs(dx) >= SWIPE_THRESHOLD_PX){
-      finalize(dx < 0 ? 'semitone' : 'step'); // 왼쪽=A(반음), 오른쪽=S(한 키)
-    }
+    attemptTrigger(ev.clientX);
   }
   function onUp(ev){
     if(ev.pointerId !== pointerId) return;
-    finalize(null); // 슬라이드 없이 뗐으면 그냥 일반 탭
+    cleanup(); // 판정선에 못 닿고 손을 떼면 소리 없이 그냥 끝남
   }
   function cleanup(){
-    clearTimeout(timer);
     window.removeEventListener('pointermove', onMove);
     window.removeEventListener('pointerup', onUp);
     window.removeEventListener('pointercancel', onUp);
@@ -804,12 +824,18 @@ function startTouchSwipeGesture(e, laneIndex, laneEl){
   window.addEventListener('pointermove', onMove);
   window.addEventListener('pointerup', onUp);
   window.addEventListener('pointercancel', onUp);
-  const timer = setTimeout(()=> finalize(null), SWIPE_DECIDE_MS);
+  attemptTrigger(startX); // 처음부터 이미 판정선 근처를 눌렀다면 바로 트리거
 }
 
-/* ---------- 마우스(손가락)를 누른 채 위/아래로 쭉 훑으면, 지나간 줄들이 순서대로 재생됨 ---------- */
-let dragPointerActive = false;
+/* ---------- 손가락(마우스)을 누른 채 위/아래로 쭉 훑으면, 지나간 줄들이 순서대로 재생됨 ----------
+   반드시 '이 제스처를 시작한 손가락(pointerId)'의 움직임만 반영한다.
+   (그래야 다른 손가락으로 A/S 가상 패드를 누를 때, 그 움직임이 무대의 줄을 훑는 것으로 잘못 인식되지 않는다) */
+let dragPointerId = null;
 let lastDragLane = -1;
+function startDragGlide(pointerId, startLane){
+  dragPointerId = pointerId;
+  lastDragLane = startLane;
+}
 function laneIndexFromClientY(clientY){
   const stageRect = stage.getBoundingClientRect();
   const laneH = stageRect.height / 13;
@@ -825,7 +851,7 @@ function stepThroughLanes(fromLane, toLane){
   }
 }
 window.addEventListener('pointermove', (e)=>{
-  if(!dragPointerActive) return;
+  if(dragPointerId === null || e.pointerId !== dragPointerId) return;
   const idx = laneIndexFromClientY(e.clientY);
   if(idx !== lastDragLane){
     stopTremolo(); // 훑는 중에는 한 줄에 멈춰 트레몰로가 걸리지 않도록 초기화
@@ -833,8 +859,8 @@ window.addEventListener('pointermove', (e)=>{
     lastDragLane = idx;
   }
 });
-window.addEventListener('pointerup', ()=>{ dragPointerActive = false; lastDragLane = -1; });
-window.addEventListener('pointercancel', ()=>{ dragPointerActive = false; lastDragLane = -1; });
+window.addEventListener('pointerup', (e)=>{ if(e.pointerId === dragPointerId){ dragPointerId = null; lastDragLane = -1; } });
+window.addEventListener('pointercancel', (e)=>{ if(e.pointerId === dragPointerId){ dragPointerId = null; lastDragLane = -1; } });
 
 function scheduleSong(){
   notes = [];
@@ -1187,6 +1213,20 @@ function closeSongList(){
   document.getElementById('songListModal').classList.remove('show');
 }
 
+// 곡을 올린 계정이 관리자(isAdmin: true)인지 확인 (users 컬렉션은 누구나 읽을 수 있도록 이미 규칙이 열려 있음)
+const adminUidCache = new Map(); // uid -> boolean (반복 조회 방지)
+async function isUploaderAdmin(uid){
+  if(!uid || !fbDb) return false;
+  if(adminUidCache.has(uid)) return adminUidCache.get(uid);
+  let result = false;
+  try{
+    const doc = await fbDb.collection('users').doc(uid).get();
+    result = !!(doc.exists && doc.data().isAdmin === true);
+  }catch(e){ result = false; }
+  adminUidCache.set(uid, result);
+  return result;
+}
+
 async function renderSongList(){
   const wrap = document.getElementById('songListItems');
   wrap.innerHTML = '<div class="song-empty">불러오는 중...</div>';
@@ -1200,12 +1240,20 @@ async function renderSongList(){
     return;
   }
   const myUid = (fbAuth && fbAuth.currentUser) ? fbAuth.currentUser.uid : null;
-  wrap.innerHTML = migrateBtn + list.map(s => `
+  // 곡마다 업로더가 관리자인지 미리 전부 조회해둔다 (같은 uid는 캐시로 한 번만 조회)
+  const adminFlags = await Promise.all(list.map(s => isUploaderAdmin(s.uploaderUid)));
+  wrap.innerHTML = migrateBtn + list.map((s, i) => {
+    const makerLabel = !s.uploaderUid
+      ? `패턴 제작 ${escapeHtml(s.maker || '익명')}`
+      : adminFlags[i]
+        ? `<span class="maker-badge admin">관리자 제작</span>`
+        : `<span class="maker-badge user">유저 제작</span>`;
+    return `
     <div class="song-item">
       <div class="song-item-info">
         <b>${escapeHtml(s.name)}</b>
         <span>${escapeHtml(s.artist || '가수 미상')}</span>
-        <span>패턴 제작 ${escapeHtml(s.maker || '익명')}</span>
+        <span>${makerLabel}</span>
       </div>
       <div style="display:flex; gap:6px; flex:none; flex-wrap:wrap;">
         <button class="btn small" onclick="applySong('${s.id}')">플레이</button>
@@ -1213,7 +1261,8 @@ async function renderSongList(){
         ${ (myUid && s.uploaderUid === myUid) ? `<button class="btn small ghost" onclick="openSongEdit('${s.id}')">수정</button>` : '' }
         ${ (myUid && s.uploaderUid === myUid) ? `<button class="btn small ghost" onclick="deleteSong('${s.id}')">삭제</button>` : '' }
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 function escapeHtml(s){
   return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1340,10 +1389,14 @@ const EDIT_HANDOFF_KEY = 'tarodang_guzheng_edit_payload';
 function isMobileViewport(){
   return window.matchMedia('(max-width:900px)').matches;
 }
-// 편집기로 이동하는 모든 버튼이 공통으로 거치는 진입점: 모바일이면 안내만 띄우고 막는다
+// 편집기로 이동하는 모든 버튼이 공통으로 거치는 진입점: 모바일이거나 비로그인이면 안내만 띄우고 막는다
 function goToEditor(url){
   if(isMobileViewport()){
     alert('편집기는 PC 환경에서만 접속 가능합니다');
+    return;
+  }
+  if(!fbAuth || !fbAuth.currentUser){
+    alert('타로당(芋頭堂)에 로그인 중인 회원님들만 편집기에 접속이 가능합니다');
     return;
   }
   window.open(url, '_blank');
@@ -1355,6 +1408,10 @@ function openSongInEditor(){
   if(!editingSongId) return;
   if(isMobileViewport()){
     alert('편집기는 PC 환경에서만 접속 가능합니다');
+    return;
+  }
+  if(!fbAuth || !fbAuth.currentUser){
+    alert('타로당(芋頭堂)에 로그인 중인 회원님들만 편집기에 접속이 가능합니다');
     return;
   }
   const song = cachedSongList.find(s => s.id === editingSongId);
@@ -1513,8 +1570,8 @@ document.getElementById('leaderboardModal').addEventListener('click', (e)=>{ if(
 /* ---------- 모바일 가상 패드: 반투명 A/S 버튼을 누르고 있는 동안은 키보드 A/S를 누른 것과 동일하게 동작 ---------- */
 function bindPadBtn(el, setDown){
   if(!el) return;
-  const down = (e)=>{ e.preventDefault(); setDown(true); el.classList.add('active'); };
-  const up = (e)=>{ e.preventDefault(); setDown(false); el.classList.remove('active'); };
+  const down = (e)=>{ e.preventDefault(); e.stopPropagation(); setDown(true); el.classList.add('active'); };
+  const up = (e)=>{ e.preventDefault(); e.stopPropagation(); setDown(false); el.classList.remove('active'); };
   el.addEventListener('pointerdown', down);
   el.addEventListener('pointerup', up);
   el.addEventListener('pointerleave', up);
