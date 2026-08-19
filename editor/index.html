@@ -566,10 +566,11 @@ async function playNote(lane, vol, bend){
    Q/W/E=0.5박/1박/2박 선택, Ctrl+Z=뒤로, Ctrl+Y=다시 실행, Ctrl+A=전체 선택,
    Delete/Backspace=선택 삭제, Esc=선택 해제 */
 let aKeyDown = false, sKeyDown = false;
+const SPACEBAR_EXEMPT_IDS = new Set(['volumeSlider', 'exportBox']); // 볼륨바·코드창은 글자 입력용이 아니라서, 포커스가 있어도 스페이스바 단축키를 막지 않는다
 window.addEventListener('keydown', (e)=>{
   const k = e.key.toLowerCase();
   const tag = (e.target.tagName||'').toLowerCase();
-  const typing = (tag==='input' || tag==='textarea');
+  const typing = (tag==='input' || tag==='textarea') && !SPACEBAR_EXEMPT_IDS.has(e.target.id);
 
   if(k==='a' && !(e.ctrlKey||e.metaKey) && !typing) aKeyDown = true;
   if(k==='s' && !(e.ctrlKey||e.metaKey) && !typing) sKeyDown = true;
@@ -808,8 +809,14 @@ function selectRange(anchor, target){
   const stepMin = Math.min(anchor.step, target.step), stepMax = Math.max(anchor.step, target.step);
   selectedCells.clear();
   for(let lane = laneMin; lane <= laneMax; lane++){
-    for(let step = stepMin; step <= stepMax; step++){
-      if(cells[lane][step] > 0) selectedCells.add(cellKey(lane, step));
+    // 시작 칸만 범위 안에 있는지가 아니라, 노트가 차지하는 구간 전체가 선택 범위와
+    // 조금이라도 겹치면 선택한다 (범위 밖에서 시작해 범위 안으로 걸쳐 들어오는 긴 노트도 포함됨)
+    for(let step = 0; step < STEPS; step++){
+      const dur = cells[lane][step];
+      if(dur > 0){
+        const noteEnd = step + dur - 1;
+        if(step <= stepMax && noteEnd >= stepMin) selectedCells.add(cellKey(lane, step));
+      }
     }
   }
   refreshGrid();
