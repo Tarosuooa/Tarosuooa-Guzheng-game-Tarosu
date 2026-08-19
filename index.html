@@ -187,6 +187,22 @@ h1{
 
 /* ---------- 관리자 전용: 텍스트 편집 모드 ---------- */
 #textEditToggleBtn{ display:none; position:fixed; top:52px; right:16px; z-index:160; }
+#textFormatToolbar{
+  position:fixed; top:90px; right:16px; z-index:160;
+  align-items:center; gap:6px; background:#fff; border:1px solid var(--paper-dark);
+  border-radius:8px; padding:6px 8px; box-shadow:0 4px 14px rgba(0,0,0,0.18);
+}
+#textFormatToolbar.show{ display:flex; }
+.fmt-btn{
+  width:26px; height:26px; border:1px solid var(--paper-dark); border-radius:5px;
+  background:#fff; cursor:pointer; font-size:13px; color:var(--ink);
+}
+.fmt-btn:hover{ background:rgba(220,181,106,0.2); }
+.fmt-sep{ width:1px; height:18px; background:var(--paper-dark); margin:0 2px; }
+.fmt-swatch{
+  width:20px; height:20px; border-radius:50%; border:1px solid rgba(0,0,0,0.25); cursor:pointer; padding:0;
+}
+.fmt-swatch:hover{ outline:2px solid var(--gold); outline-offset:1px; }
 .text-edit-target{ outline:1px dashed #4da6ff; outline-offset:2px; cursor:text; }
 .text-edit-target:focus{ outline:2px solid #2f7dd6; background:rgba(77,166,255,0.08); }
 
@@ -259,7 +275,7 @@ h1{
   font-size:14px; color:var(--wood-deep); display:block;
   max-width:15em; word-break:break-word; overflow-wrap:break-word; line-height:1.4;
 } /* 한글/한자/가나 기준 공백 포함 약 15자에서 다음 줄로 넘어감(PC 기준) */
-.song-item-info span{ font-size:11.5px; color:var(--ink-soft); }
+.song-item-info span{ font-size:11.5px; color:var(--ink-soft); display:block; }
 .song-empty{ text-align:center; color:var(--ink-soft); font-size:12.5px; padding:20px 0; }
 .local-note{ font-size:11px; color:var(--ink-soft); margin-top:14px; text-align:center; }
 </style>
@@ -270,6 +286,16 @@ h1{
 
 <div class="auth-status" id="authStatus"></div>
 <button id="textEditToggleBtn" class="btn small ghost" onclick="toggleTextEditMode()">텍스트 편집하기</button>
+<div id="textFormatToolbar" style="display:none;">
+  <button type="button" class="fmt-btn" style="font-weight:800;" onmousedown="event.preventDefault()" onclick="applyTextFormat('bold')" title="굵게">B</button>
+  <button type="button" class="fmt-btn" style="text-decoration:underline;" onmousedown="event.preventDefault()" onclick="applyTextFormat('underline')" title="밑줄">U</button>
+  <span class="fmt-sep"></span>
+  <button type="button" class="fmt-swatch" style="background:#1a1a1a;" onmousedown="event.preventDefault()" onclick="applyTextColor('#1a1a1a')" title="검은색"></button>
+  <button type="button" class="fmt-swatch" style="background:#d0342c;" onmousedown="event.preventDefault()" onclick="applyTextColor('#d0342c')" title="빨간색"></button>
+  <button type="button" class="fmt-swatch" style="background:#2a5ca8;" onmousedown="event.preventDefault()" onclick="applyTextColor('#2a5ca8')" title="파란색"></button>
+  <button type="button" class="fmt-swatch" style="background:#2f8a4e;" onmousedown="event.preventDefault()" onclick="applyTextColor('#2f8a4e')" title="초록색"></button>
+  <button type="button" class="fmt-swatch" style="background:#7a3f9e;" onmousedown="event.preventDefault()" onclick="applyTextColor('#7a3f9e')" title="보라색"></button>
+</div>
 
 <h1 id="pageTitle">타로당 13현 고쟁 GAME</h1>
 <p class="sub">계이름 점이 오른쪽 세로선에 닿는 순간, 그 줄을 터치하세요.<br>반음 UP = 키보드 A + 클릭<br>한 키 UP = 키보드 S + 클릭<br>트레몰로 = 꾹 누르기</p>
@@ -553,7 +579,22 @@ function toggleTextEditMode(){
   });
   const btn = document.getElementById('textEditToggleBtn');
   if(btn) btn.textContent = textEditModeOn ? '💾 저장' : '텍스트 편집하기';
-  if(textEditModeOn) showToastMsg('문구를 클릭해서 고치고, 다른 곳을 클릭하면 자동 저장돼요.');
+  const toolbar = document.getElementById('textFormatToolbar');
+  if(toolbar) toolbar.classList.toggle('show', textEditModeOn);
+  if(textEditModeOn) showToastMsg('문구를 클릭해서 고치고, 다른 곳을 클릭하면 자동 저장돼요. 글자를 드래그해서 선택하면 위쪽 도구로 굵게/밑줄/색상을 바꿀 수 있어요.');
+}
+// 굵게/밑줄/색상 서식 도구: 지금 편집 중인(포커스된) 글자 선택 영역에 적용하고, 바로 저장한다
+function applyTextFormat(cmd){
+  document.execCommand(cmd, false, null);
+  saveActiveEditableTarget();
+}
+function applyTextColor(color){
+  document.execCommand('foreColor', false, color);
+  saveActiveEditableTarget();
+}
+function saveActiveEditableTarget(){
+  const active = document.activeElement;
+  if(active && active.dataset && active.dataset.tkey) saveTextOverride(active);
 }
 document.addEventListener('focusout', (e)=>{
   if(textEditModeOn && e.target && e.target.dataset && e.target.dataset.tkey){
@@ -1097,7 +1138,8 @@ async function renderSongList(){
     <div class="song-item">
       <div class="song-item-info">
         <b>${escapeHtml(s.name)}</b>
-        <span>${escapeHtml(s.artist || '가수 미상')} · 패턴 제작 ${escapeHtml(s.maker || '익명')}</span>
+        <span>${escapeHtml(s.artist || '가수 미상')}</span>
+        <span>패턴 제작 ${escapeHtml(s.maker || '익명')}</span>
       </div>
       <div style="display:flex; gap:6px; flex:none; flex-wrap:wrap;">
         <button class="btn small" onclick="applySong('${s.id}')">플레이</button>
