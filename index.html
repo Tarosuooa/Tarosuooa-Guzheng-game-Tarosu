@@ -309,9 +309,9 @@ h1{
   padding:12px 0; border-bottom:1px solid var(--paper-dark);
 }
 .howto-row:last-child{ border-bottom:none; }
-.howto-name{ flex:0 0 20%; max-width:20%; font-size:13.5px; font-weight:700; color:var(--wood-deep); display:flex; align-items:center; }
+.howto-name{ flex:0 0 20%; max-width:20%; font-size:13.5px; font-weight:700; color:var(--wood-deep); display:flex; align-items:center; white-space:pre-wrap; word-break:break-word; }
 .howto-gif{ flex:0 0 20%; max-width:20%; display:flex; align-items:center; justify-content:center; }
-.howto-desc{ flex:0 0 60%; max-width:60%; font-size:12.5px; color:var(--ink-soft); display:flex; align-items:center; line-height:1.5; }
+.howto-desc{ flex:0 0 60%; max-width:60%; font-size:12.5px; color:var(--ink-soft); display:flex; align-items:center; line-height:1.5; white-space:pre-wrap; word-break:break-word; }
 .howto-name.editable, .howto-desc.editable{ cursor:text; border-radius:4px; padding:2px 4px; }
 .howto-name.editable:hover, .howto-desc.editable:hover{ background:rgba(220,181,106,0.15); }
 .howto-name.editable:focus, .howto-desc.editable:focus{ outline:1px solid var(--gold); background:#fff; }
@@ -804,13 +804,7 @@ function buildLanes(){
     hitZone.className = 'lane-hit';
     hitZone.addEventListener('pointerdown', (e)=>{
       e.preventDefault();
-      if(e.pointerType === 'touch'){
-        startTouchGesture(e, i, lane);
-      }else{
-        onLaneTap(i, lane, false, undefined, {x:e.clientX, y:e.clientY});
-        beginTremolo(i, lane);
-        startDragGlide(e.pointerId, i);
-      }
+      startPointerGesture(e, i, lane); // 마우스(PC)·터치(모바일) 모두 동일한 제스처로 처리
     });
     hitZone.addEventListener('pointerup', stopTremolo);
     hitZone.addEventListener('pointerleave', stopTremolo);
@@ -823,8 +817,8 @@ function buildLanes(){
 let laneEls = [];
 buildLanes();
 
-/* ---------- 판정 기준 선을 눌렀을 때만 소리/판정이 나도록 하는 공통 헬퍼 (모바일 터치 전용) ----------
-   데스크톱(마우스)은 기존처럼 줄 아무 곳이나 눌러도 소리가 나되, 모바일 터치는 판정선 근처를 눌러야만 반응한다. */
+/* ---------- 판정 기준 선을 눌렀을 때만 소리/판정이 나도록 하는 공통 헬퍼 ----------
+   PC(마우스)·모바일(터치) 모두 판정선 근처를 눌러야만 반응한다. */
 const JUDGE_LINE_PCT = 0.78; // .judge-line의 CSS left:78%와 반드시 맞춰야 함
 const JUDGE_TOUCH_TOLERANCE_PX = 34; // 판정선 좌우 이 범위 안에 닿아야 탭으로 인정
 function judgeLineX(){
@@ -835,13 +829,15 @@ function isNearJudgeLine(clientX){
   return Math.abs(clientX - judgeLineX()) <= JUDGE_TOUCH_TOLERANCE_PX;
 }
 
-/* ---------- 모바일 터치 제스처 ----------
-   1) 판정 기준 선 근처에 손가락이 닿는 순간에만 소리/판정이 난다 (그 전까지는 화면 아무 데나 눌러도 무반응).
+/* ---------- 마우스(PC)·터치(모바일) 공통 연주 제스처 ----------
+   1) 판정 기준 선 근처를 누르는(또는 그 근처로 커서/손가락이 다가오는) 순간에만 소리/판정이 난다.
+      (그 전까지는 화면 아무 데나 눌러도 무반응 — PC 마우스도 모바일과 동일하게 적용됨)
    2) 판정선 '바깥'에서 시작해 판정선 '방향으로' 다가와 닿았을 때만 반음(A)/한 키(S)로 인정한다.
       (판정선에서 시작해 바깥쪽으로 나가는 움직임은 방향 판정에 포함하지 않는다.)
-      바깥 왼쪽 → 판정선(오른쪽으로 다가옴) = 한 키(S), 바깥 오른쪽 → 판정선(왼쪽으로 다가옴) = 반음(A). */
+      바깥 왼쪽 → 판정선(오른쪽으로 다가옴) = 한 키(S), 바깥 오른쪽 → 판정선(왼쪽으로 다가옴) = 반음(A).
+   PC에서는 마우스 버튼을 누른 채 옆에서 판정선 쪽으로 드래그하면 모바일의 슬라이드와 동일하게 동작한다. */
 const SWIPE_THRESHOLD_PX = 14;
-function startTouchGesture(e, laneIndex, laneEl){
+function startPointerGesture(e, laneIndex, laneEl){
   const pointerId = e.pointerId;
   const startX = e.clientX;
   let currentY = e.clientY;
@@ -1650,18 +1646,19 @@ function renderHowtoRows(){
   if(addBtn) addBtn.style.display = isAdminUser ? 'inline-block' : 'none';
   const rows = getActiveHowtoRows();
   wrap.innerHTML = rows.map(r => {
-    const nameAttrs = isAdminUser ? `contenteditable="true" onblur="saveHowtoField('${r.id}','name',this)"` : '';
-    const descAttrs = isAdminUser ? `contenteditable="true" onblur="saveHowtoField('${r.id}','desc',this)"` : '';
+    const nameAttrs = isAdminUser ? `contenteditable="true" onblur="saveHowtoField('${r.id}','name',this)" onkeydown="handleHowtoFieldKeydown(event)"` : '';
+    const descAttrs = isAdminUser ? `contenteditable="true" onblur="saveHowtoField('${r.id}','desc',this)" onkeydown="handleHowtoFieldKeydown(event)"` : '';
     const gifInner = r.gif
-      ? `<img src="${escapeHtml(r.gif)}" alt="${escapeHtml(r.name)}">`
+      ? `<img src="${escapeHtml(r.gif)}" alt="${escapeHtml(stripHtml(r.name))}">`
       : `<div class="howto-gif-placeholder">${isAdminUser ? 'GIF 추가' : 'GIF 없음'}</div>`;
     const gifOnClick = isAdminUser ? `onclick="editHowtoGif('${r.id}')"` : '';
     const delBtn = isAdminUser ? `<button class="howto-del-btn" onclick="deleteHowtoRow('${r.id}')" title="삭제">✕</button>` : '';
+    // name/desc는 굵기·줄바꿈 서식이 담긴 HTML 그대로 렌더링한다 (관리자만 쓸 수 있는 자기 콘텐츠라 escapeHtml로 이스케이프하지 않음)
     return `
     <div class="howto-row">
-      <div class="howto-name${isAdminUser?' editable':''}" ${nameAttrs}>${escapeHtml(r.name)}</div>
+      <div class="howto-name${isAdminUser?' editable':''}" ${nameAttrs}>${r.name}</div>
       <div class="howto-gif${isAdminUser?' editable':''}" ${gifOnClick}>${gifInner}</div>
-      <div class="howto-desc${isAdminUser?' editable':''}" ${descAttrs}>${escapeHtml(r.desc)}</div>
+      <div class="howto-desc${isAdminUser?' editable':''}" ${descAttrs}>${r.desc}</div>
       ${delBtn}
     </div>`;
   }).join('');
@@ -1670,8 +1667,22 @@ function saveHowtoField(id, field, el){
   const rows = getActiveHowtoRows();
   const row = rows.find(r => r.id === id);
   if(!row) return;
-  row[field] = el.textContent.trim();
+  row[field] = el.innerHTML; // 굵기(<b>)·줄바꿈(<br>/<div>) 서식을 그대로 보존해서 저장
   saveHowtoOverrides(rows);
+}
+// Ctrl+B로 굵게 토글 (대부분 브라우저는 기본 지원하지만, 명시적으로도 확실히 동작하게 함)
+function handleHowtoFieldKeydown(e){
+  const isBold = (e.key === 'b' || e.key === 'B') && (e.ctrlKey || e.metaKey);
+  if(isBold){
+    e.preventDefault();
+    document.execCommand('bold', false, null);
+  }
+  // Enter는 기본 동작(줄바꿈)을 그대로 둔다 — 별도 처리 없이 다음 줄로 이동됨
+}
+function stripHtml(html){
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  return tmp.textContent || '';
 }
 function editHowtoGif(id){
   const rows = getActiveHowtoRows();
@@ -1726,13 +1737,28 @@ document.getElementById('leaderboardModal').addEventListener('click', (e)=>{ if(
 
 <script>
 /* ---------- 모바일 가상 패드: 반투명 A/S 버튼을 누르고 있는 동안은 키보드 A/S를 누른 것과 동일하게 동작 ---------- */
+/* pointerleave는 손가락이 살짝만 움직여도(원형 버튼 특성상 손끝이 아주 조금만 벗어나도) 오작동하며
+   눌림 상태를 조기에 풀어버리는 경우가 많았다. 대신 setPointerCapture로 이 포인터를 버튼에 '붙잡아서',
+   손가락이 버튼 밖으로 살짝 나가도 계속 눌린 상태로 안정적으로 유지되게 한다. */
 function bindPadBtn(el, setDown){
   if(!el) return;
-  const down = (e)=>{ e.preventDefault(); e.stopPropagation(); setDown(true); el.classList.add('active'); };
-  const up = (e)=>{ e.preventDefault(); e.stopPropagation(); setDown(false); el.classList.remove('active'); };
+  let activePointerId = null;
+  const down = (e)=>{
+    e.preventDefault(); e.stopPropagation();
+    activePointerId = e.pointerId;
+    try{ el.setPointerCapture(e.pointerId); }catch(err){}
+    setDown(true);
+    el.classList.add('active');
+  };
+  const up = (e)=>{
+    if(activePointerId !== null && e.pointerId !== activePointerId) return;
+    e.preventDefault(); e.stopPropagation();
+    activePointerId = null;
+    setDown(false);
+    el.classList.remove('active');
+  };
   el.addEventListener('pointerdown', down);
   el.addEventListener('pointerup', up);
-  el.addEventListener('pointerleave', up);
   el.addEventListener('pointercancel', up);
 }
 bindPadBtn(document.getElementById('padA'), v=>{ aKeyDown = v; });
