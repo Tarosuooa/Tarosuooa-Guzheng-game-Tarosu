@@ -56,26 +56,28 @@ h1{ font-size:20px; color:var(--wood-deep); font-family:'Nanum Myeongjo',serif; 
    항상 정확한 위치에 고정되고, 긴 음은 grid-column: span N으로 넓어진다.
    (예전엔 폭을 CSS 클래스별로 정해두고 나머지 칸을 숨기는 방식이라, 새로운 길이 값이 생기면
    해당 클래스를 깜빡할 수 있는 구조적 위험이 있었다. grid는 그런 위험이 없다.) */
-.row-cells{ display:grid; grid-auto-columns:22px; grid-auto-rows:22px; column-gap:2px; align-items:center; }
+/* 16칸(4박)마다 첫 칸만 살짝 넓게(22px+5px 여백) 반복되는 열 구조 — 원래 디자인(작은 구간 여백)을 그대로 유지하면서
+   grid-column-start로 각 칸 위치를 고정하는 방식과 함께 쓴다 */
+.row-cells{ display:grid; grid-template-columns: repeat(16, 27px repeat(15, 22px)); grid-auto-rows:22px; column-gap:2px; align-items:center; }
 .cell{
   width:22px; height:22px; border-radius:3px;
   background:rgba(255,255,255,0.06); cursor:pointer; position:relative;
 }
 .cell:hover{ background:rgba(220,181,106,0.25); }
 .cell.on{ background:var(--gold-bright); }
-.cell.beat0{ border-left:2px solid rgba(220,181,106,0.35); }
+.cell.beat0{ }
 .row.teal .cell.on{ background:#5bd6c9; }
 .row.teal .row-label{ color:#5bd6c9; }
 
 /* 재생 구간 시작점을 고르는 룰러 (그리드 맨 위, 그리드와 같이 가로 스크롤됨) */
 .ruler-row{ display:flex; align-items:center; height:14px; margin-bottom:3px; }
-.ruler-cells{ display:grid; grid-auto-columns:22px; grid-auto-rows:10px; column-gap:2px; }
+.ruler-cells{ display:grid; grid-template-columns: repeat(16, 27px repeat(15, 22px)); grid-auto-rows:10px; column-gap:2px; }
 .ruler-cell{
   width:22px; height:10px; border-radius:2px;
   background:rgba(255,255,255,0.06); cursor:pointer;
 }
 .ruler-cell:hover{ background:rgba(255,255,255,0.18); }
-.ruler-cell.beat0{ border-left:2px solid rgba(220,181,106,0.35); }
+.ruler-cell.beat0{ }
 .ruler-cell.start-marker{ background:#ff5a5a; }
 /* 노트 표시: shift+클릭(또는 '트레몰로' 버튼)=///, a+클릭(또는 '반음 UP')=A, s+클릭(또는 '한 키 UP')=S
    블록 색은 일반 노트와 동일하게 유지하고, 표시 글자만 블록보다 어두운 색으로 얹는다 */
@@ -920,11 +922,12 @@ function buildOrderedSong(){
 }
 
 /* ---------- 재생 / 일시정지 / 원하는 위치부터 재생 ---------- */
-const CELL_SLOT = 24;        // .row-cells의 grid-auto-columns(22px) + column-gap(2px)
+const CELL_SLOT = 24;        // .row-cells의 일반 칸(22px) + column-gap(2px)
+const BEAT_GROUP_EXTRA = 5;  // 4박마다 첫 칸이 5px 더 넓은 만큼의 보정값
 const LABEL_WIDTH = 40;      // .row-label 너비
-const BEAT_GROUP_STEPS = 16; // 4박 = 16칸(STEP_BEAT=0.25 기준) — beat0 표시(구간 구분선) 간격
+const BEAT_GROUP_STEPS = 16; // 4박 = 16칸(STEP_BEAT=0.25 기준)
 function stepToX(step){
-  return LABEL_WIDTH + step * CELL_SLOT; // beat0은 이제 여백이 아니라 테두리선이라 폭 계산에 영향 없음
+  return LABEL_WIDTH + step * CELL_SLOT + Math.floor(step / BEAT_GROUP_STEPS) * BEAT_GROUP_EXTRA;
 }
 
 let playbackStartStep = 0;
