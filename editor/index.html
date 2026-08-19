@@ -341,7 +341,7 @@ textarea#exportBox{
   &nbsp;&nbsp;&nbsp;키보드 대신 위쪽 '반음 UP' · '한 키 UP' · '트레몰로 추가' 버튼을 눌러서 모드를 켠 채로 계속 클릭해도 돼요 (버튼은 서로 독립적이라 같이 켤 수 있어요).<br>
   4. 이 표시들은 실제 게임에서 다가오는 점 위에 그대로 나타나고, 표시된 조작(반음/한 키 올려 치기, 트레몰로)을 하지 않으면 MISS 판정이 나요.<br>
   5. <b>Ctrl+클릭</b>으로 여러 음을 선택할 수 있고(다시 Ctrl+클릭하면 해제), <b>Ctrl+A</b>로 전체 선택, 선택된 상태에서 <b>Delete/Backspace</b>로 한 번에 지울 수 있어요. <b>Esc</b>는 선택 해제예요.<br>
-  &nbsp;&nbsp;&nbsp;한 음을 클릭한 뒤 다른 음을 <b>Shift+클릭</b>하면, 그 사이 범위에 있는 음들이 한 번에 선택돼요.<br>
+  &nbsp;&nbsp;&nbsp;한 음을 클릭한 뒤 다른 음을 <b>Shift+클릭</b>하면, 그 사이 타이밍 범위에 있는 모든 계이름의 음이 한 번에 선택돼요.<br>
   &nbsp;&nbsp;&nbsp;선택된 음 위에서 그대로 마우스를 누른 채 끌면, 선택된 음들이 함께 원하는 위치(계이름·타이밍)로 이동해요.<br>
   6. <b>Ctrl+Z</b> 되돌리기, <b>Ctrl+Y</b> 다시 실행.<br>
   7. 왼쪽 계이름 글자를 클릭하면 그 음을 바로 들어볼 수 있어요.<br>
@@ -805,10 +805,11 @@ document.addEventListener('mouseup', ()=>{ dragging = false; movingSelection = f
 
 // anchor 노트와 target 노트가 이루는 사각 범위(레인×타이밍) 안에 있는 노트를 전부 선택한다
 function selectRange(anchor, target){
-  const laneMin = Math.min(anchor.lane, target.lane), laneMax = Math.max(anchor.lane, target.lane);
   const stepMin = Math.min(anchor.step, target.step), stepMax = Math.max(anchor.step, target.step);
   selectedCells.clear();
-  for(let lane = laneMin; lane <= laneMax; lane++){
+  // 레인(계이름)은 제한하지 않고, 선택한 두 지점의 타이밍(세로줄) 범위 안에 있는
+  // 모든 계이름의 블록을 전부 선택한다.
+  for(let lane = 0; lane < 13; lane++){
     // 시작 칸만 범위 안에 있는지가 아니라, 노트가 차지하는 구간 전체가 선택 범위와
     // 조금이라도 겹치면 선택한다 (범위 밖에서 시작해 범위 안으로 걸쳐 들어오는 긴 노트도 포함됨)
     for(let step = 0; step < STEPS; step++){
