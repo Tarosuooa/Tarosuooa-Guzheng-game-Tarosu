@@ -257,7 +257,7 @@ h1{
 <div id="rotateWrapper">
 
 <div class="auth-status" id="authStatus"></div>
-<button id="textEditToggleBtn" class="btn small ghost" onclick="toggleTextEditMode()">✏️ 텍스트 편집</button>
+<button id="textEditToggleBtn" class="btn small ghost" onclick="toggleTextEditMode()">텍스트 편집하기</button>
 
 <h1>타로당 13현 고쟁 GAME</h1>
 <p class="sub">계이름 점이 오른쪽 세로선에 닿는 순간, 그 줄을 터치하세요.<br>반음 UP = 키보드 A + 클릭<br>한 키 UP = 키보드 S + 클릭<br>트레몰로 = 꾹 누르기</p>
@@ -301,7 +301,7 @@ h1{
   <button class="btn ghost" onclick="restartGame()">처음부터</button>
   <button class="btn ghost" onclick="openSongList()">📋 곡 목록</button>
 </div>
-<div id="currentSongLabel" style="margin-top:8px; font-size:12.5px; color:var(--ink-soft);">현재 곡: 아리랑 (또는 나비야 · 기본 곡)</div>
+<div id="currentSongLabel" style="margin-top:8px; font-size:12.5px; color:var(--ink-soft);">곡을 불러오는 중...</div>
 
 <div class="guide">
   <b>사용법</b> — 각 줄(계이름) 위로 굵은 점이 왼쪽에서 오른쪽으로 흘러와요. 점이 반짝이는 세로 연주선에 닿는 순간 그 줄(가로 라인) 아무 곳이나 터치/클릭하면 소리가 나며 판정이 떠요.
@@ -332,7 +332,7 @@ h1{
       <button class="modal-close" onclick="closeSongRegister()">✕</button>
     </div>
     <label>곡 이름</label>
-    <input type="text" id="regSongName" placeholder="예: 나비야">
+    <input type="text" id="regSongName" placeholder="예: 아리랑">
     <label>가수</label>
     <input type="text" id="regArtist" placeholder="예: 전래동요">
     <label>패턴 제작자</label>
@@ -355,7 +355,7 @@ h1{
       <button class="modal-close" onclick="closeSongEdit()">✕</button>
     </div>
     <label>곡 이름</label>
-    <input type="text" id="editSongName" placeholder="예: 나비야">
+    <input type="text" id="editSongName" placeholder="예: 아리랑">
     <label>가수</label>
     <input type="text" id="editArtist" placeholder="예: 전래동요">
     <label>패턴 제작자</label>
@@ -460,7 +460,8 @@ const EDITABLE_SELECTOR = 'h1, .sub, .guide, .modal-sub, .modal-head h2, .toolba
 const NON_EDITABLE_IDS = new Set([
   'scoreEl','comboEl','judgment','currentSongLabel','volumeLabel',
   'countdownNum','finalScore','finalGrade','authStatus',
-  'playBtn','pauseBtn','padA','padS','recordScoreBtn','recordScoreStatus'
+  'playBtn','pauseBtn','padA','padS','recordScoreBtn','recordScoreStatus',
+  'textEditToggleBtn'
 ]);
 
 function getEditableTextElements(){
@@ -512,7 +513,7 @@ function toggleTextEditMode(){
     }
   });
   const btn = document.getElementById('textEditToggleBtn');
-  if(btn) btn.textContent = textEditModeOn ? '✅ 편집 종료' : '✏️ 텍스트 편집';
+  if(btn) btn.textContent = textEditModeOn ? '💾 저장' : '텍스트 편집하기';
   if(textEditModeOn) showToastMsg('문구를 클릭해서 고치고, 다른 곳을 클릭하면 자동 저장돼요.');
 }
 document.addEventListener('focusout', (e)=>{
@@ -603,21 +604,12 @@ window.addEventListener('keyup', (e)=>{
 });
 window.addEventListener('blur', ()=>{ aKeyDown=false; sKeyDown=false; });
 
-/* ===================== 나비야 채보 (도레미파솔 계이름을, 악기 오음계 순서에 그대로 대응) ===================== */
-// [줄 인덱스(0~12), 길이(박)]  -  100 BPM, 한 박 = 600ms
-// 도=5(A4) 레=6(B4) 미=7(D5) 파=8(E5) 솔=9(F#5) 로 대응
-// 곡 목록에서 다른 곡을 선택하면 이 값들이 그 곡의 데이터로 교체된다
+/* ===================== 기본 곡 =====================
+   서버(Firestore)에서 '아리랑'을 불러오기 전까지 잠깐 쓰이는 빈 값.
+   페이지 로드 시 applyDefaultArirangIfAvailable()가 곧바로 실제 곡으로 채워준다. */
 let BPM = 100;
 let BEAT_MS = 60000 / BPM;
-let SONG = [
-  // 나비야 나비야 이리 날아 오너-라
-  [9,1],[7,1],[7,1], [8,1],[6,1],[6,1], [5,1],[6,1],[7,1],[8,1], [9,1],[9,1],[9,2],
-  // 노랑나비 흰나비 춤을 추며 오너-라
-  [9,1],[7,1],[7,1], [8,1],[6,1],[6,1], [5,1],[7,1],[9,1],[9,1], [7,1],[6,1],[5,2],
-  // (한 번 더 반복)
-  [9,1],[7,1],[7,1], [8,1],[6,1],[6,1], [5,1],[6,1],[7,1],[8,1], [9,1],[9,1],[9,2],
-  [9,1],[7,1],[7,1], [8,1],[6,1],[6,1], [5,1],[7,1],[9,1],[9,1], [7,1],[6,1],[5,2],
-];
+let SONG = [];
 
 /* ===================== 게임 상태 ===================== */
 const LEAD_MS = 2200;      // 점이 생성되어 판정선까지 도달하는 데 걸리는 시간
@@ -632,7 +624,7 @@ let counting = false;
 let paused = false;
 let pauseStartedAt = 0;
 let rafId = null;
-let currentSongId = 'default_nabiya'; // 기본 내장곡도 자체 순위표를 가짐
+let currentSongId = null; // 서버에서 곡을 불러오면 그 곡의 id로 채워짐
 let score = 0, combo = 0, maxCombo = 0, judgedCount = 0, perfectCount = 0, goodCount = 0;
 
 const stage = document.getElementById('stage');
@@ -859,6 +851,7 @@ function togglePause(){
 
 function startGame(){
   if(running || counting) return;
+  if(!SONG || SONG.length === 0){ showToastMsg('곡을 불러오는 중이에요. 잠시 후 다시 시도해주세요.'); return; }
   counting = true;
   paused = false;
   document.getElementById('pauseOverlay').classList.remove('show');
@@ -932,7 +925,10 @@ function recordScore(){
   }
   if(btn) btn.disabled = true;
   if(statusEl) statusEl.textContent = '기록하는 중...';
-  fbDb.collection('scores').add({
+  // 문서 ID를 '곡ID_내uid'로 고정해서 덮어쓰기(set) → 같은 계정이 같은 곡에 여러 번 기록해도
+  // 항상 가장 최근 점수 하나만 남는다 (한 곡에 같은 계정이 2개 이상 순위에 오르지 않음)
+  const scoreDocId = currentSongId + '_' + fbAuth.currentUser.uid;
+  fbDb.collection('scores').doc(scoreDocId).set({
     songId: currentSongId,
     uid: fbAuth.currentUser.uid,
     nickname: currentNickname || '회원',
@@ -980,17 +976,20 @@ async function fetchSongList(){
 }
 
 // 페이지를 열었을 때, 서버에 등록되어 있는 '아리랑'(패턴 제작자: 타로수)을 기본 곡으로 적용한다.
-// 아직 그 곡이 등록되어 있지 않다면 위의 내장 '나비야'가 그대로 기본값으로 남는다.
+// 아직 그 곡이 등록되어 있지 않다면, 서버에서 처음 곡을 찾을 때까지 SONG이 빈 채로 남는다.
 async function applyDefaultArirangIfAvailable(){
   cachedSongList = await fetchSongList();
   const arirang = cachedSongList.find(s => s.name === '아리랑' && (s.maker || '').includes('타로수'))
                || cachedSongList.find(s => s.name === '아리랑');
-  if(!arirang) return;
+  const labelEl = document.getElementById('currentSongLabel');
+  if(!arirang){
+    if(labelEl) labelEl.textContent = '등록된 곡이 없어요. \'곡 목록\'에서 곡을 등록하거나 불러와주세요.';
+    return;
+  }
   BPM = arirang.bpm;
   BEAT_MS = 60000 / BPM;
   SONG = arirang.song;
   currentSongId = arirang.id;
-  const labelEl = document.getElementById('currentSongLabel');
   if(labelEl){
     labelEl.textContent = `현재 곡: ${arirang.name} (${arirang.artist || '가수 미상'} · 패턴 ${arirang.maker || '익명'})`;
   }
@@ -1074,6 +1073,7 @@ async function migrateLocalSongsToServer(){
 
   showToastMsg(`${localList.length}곡을 서버로 올리는 중...`);
   let okCount = 0;
+  const failed = [];
   for(const s of localList){
     try{
       await fbDb.collection(SONGS_COLLECTION).add({
@@ -1085,10 +1085,25 @@ async function migrateLocalSongsToServer(){
       okCount++;
     }catch(e){
       console.error('곡 이전 실패:', s.name, e);
+      failed.push(s);
     }
   }
-  try{ localStorage.removeItem(SONG_STORE_KEY); }catch(e){}
-  showToastMsg(`${okCount}곡을 서버로 올렸어요! 이제 다른 기기에서도 보여요.`);
+  // 성공한 곡만큼만 로컬에서 지우고, 실패한 곡은 그대로 남겨서 나중에 다시 시도할 수 있게 한다
+  // (전부 실패했는데도 지워버려서 데이터가 사라지는 사고를 막기 위함)
+  try{
+    if(failed.length > 0){
+      localStorage.setItem(SONG_STORE_KEY, JSON.stringify(failed));
+    }else{
+      localStorage.removeItem(SONG_STORE_KEY);
+    }
+  }catch(e){}
+  if(okCount === 0){
+    showToastMsg('올리기에 실패했어요. Firestore songs 규칙이 설정되어 있는지 확인해주세요. (곡 데이터는 그대로 남아있어요)');
+  }else if(failed.length > 0){
+    showToastMsg(`${okCount}곡은 올렸고, ${failed.length}곡은 실패해서 남겨뒀어요. 다시 시도해보세요.`);
+  }else{
+    showToastMsg(`${okCount}곡을 서버로 올렸어요! 이제 다른 기기에서도 보여요.`);
+  }
   renderSongList();
 }
 
