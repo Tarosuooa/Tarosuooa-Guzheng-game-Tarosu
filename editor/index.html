@@ -52,27 +52,30 @@ h1{ font-size:20px; color:var(--wood-deep); font-family:'Nanum Myeongjo',serif; 
   position:sticky; left:0; z-index:3; background:#3a2416; cursor:pointer;
 }
 .row-label:hover{ color:#fff; }
+/* 칸들은 별도의 grid 컨테이너에 담는다. 각 칸은 grid-column-start로 '몇 번째 칸인지'를 직접 지정해서
+   항상 정확한 위치에 고정되고, 긴 음은 grid-column: span N으로 넓어진다.
+   (예전엔 폭을 CSS 클래스별로 정해두고 나머지 칸을 숨기는 방식이라, 새로운 길이 값이 생기면
+   해당 클래스를 깜빡할 수 있는 구조적 위험이 있었다. grid는 그런 위험이 없다.) */
+.row-cells{ display:grid; grid-auto-columns:22px; grid-auto-rows:22px; column-gap:2px; align-items:center; }
 .cell{
-  width:22px; height:22px; margin:1px; flex:none; border-radius:3px;
+  width:22px; height:22px; border-radius:3px;
   background:rgba(255,255,255,0.06); cursor:pointer; position:relative;
 }
 .cell:hover{ background:rgba(220,181,106,0.25); }
 .cell.on{ background:var(--gold-bright); }
-.cell.on.dur2{ width:46px; }
-.cell.on.dur4{ width:94px; }
-.cell.on.dur8{ width:190px; }
-.cell.beat0{ margin-left:5px; }
+.cell.beat0{ border-left:2px solid rgba(220,181,106,0.35); }
 .row.teal .cell.on{ background:#5bd6c9; }
 .row.teal .row-label{ color:#5bd6c9; }
 
 /* 재생 구간 시작점을 고르는 룰러 (그리드 맨 위, 그리드와 같이 가로 스크롤됨) */
-.ruler-row{ height:14px; margin-bottom:3px; }
+.ruler-row{ display:flex; align-items:center; height:14px; margin-bottom:3px; }
+.ruler-cells{ display:grid; grid-auto-columns:22px; grid-auto-rows:10px; column-gap:2px; }
 .ruler-cell{
-  width:22px; height:10px; margin:1px; border-radius:2px; flex:none;
+  width:22px; height:10px; border-radius:2px;
   background:rgba(255,255,255,0.06); cursor:pointer;
 }
 .ruler-cell:hover{ background:rgba(255,255,255,0.18); }
-.ruler-cell.beat0{ margin-left:5px; }
+.ruler-cell.beat0{ border-left:2px solid rgba(220,181,106,0.35); }
 .ruler-cell.start-marker{ background:#ff5a5a; }
 /* 노트 표시: shift+클릭(또는 '트레몰로' 버튼)=///, a+클릭(또는 '반음 UP')=A, s+클릭(또는 '한 키 UP')=S
    블록 색은 일반 노트와 동일하게 유지하고, 표시 글자만 블록보다 어두운 색으로 얹는다 */
@@ -687,14 +690,18 @@ function buildGrid(){
   rulerLabel.className = 'row-label';
   rulerLabel.textContent = '▶';
   ruler.appendChild(rulerLabel);
+  const rulerCells = document.createElement('div');
+  rulerCells.className = 'ruler-cells';
   for(let step=0; step<STEPS; step++){
     const rc = document.createElement('div');
     rc.className = 'ruler-cell' + (step % BEAT_GROUP_STEPS === 0 ? ' beat0' : '');
+    rc.style.gridColumnStart = step + 1; // 항상 정확히 'step번째' 칸에 고정 (다른 칸의 폭과 무관)
     rc.dataset.step = step;
     rc.title = '여기서부터 재생';
     rc.addEventListener('click', ()=> setPlaybackStart(step));
-    ruler.appendChild(rc);
+    rulerCells.appendChild(rc);
   }
+  ruler.appendChild(rulerCells);
   grid.appendChild(ruler);
 
   for(let lane=0; lane<13; lane++){
@@ -709,9 +716,12 @@ function buildGrid(){
       playNote(lane, undefined, bend);
     });
     row.appendChild(label);
+    const cellsWrap = document.createElement('div');
+    cellsWrap.className = 'row-cells';
     for(let step=0; step<STEPS; step++){
       const cell = document.createElement('div');
       cell.className = 'cell' + (step % BEAT_GROUP_STEPS === 0 ? ' beat0' : ''); // 4박마다 구간 표시
+      cell.style.gridColumnStart = step + 1; // 항상 정확히 'step번째' 칸에 고정 (다른 칸의 폭과 무관)
       cell.dataset.lane = lane;
       cell.dataset.step = step;
       cell.addEventListener('mousedown', (e)=>{
@@ -746,8 +756,9 @@ function buildGrid(){
         }
         if(dragging) paintCell(lane, step, dragAdding, dragType);
       });
-      row.appendChild(cell);
+      cellsWrap.appendChild(cell);
     }
+    row.appendChild(cellsWrap);
     grid.appendChild(row);
   }
   const playhead = document.createElement('div');
@@ -863,9 +874,10 @@ function refreshGrid(){
     const type = cellTypes[lane][step];
     const isOn = v > 0;
     cellEl.classList.toggle('on', isOn);
-    cellEl.classList.toggle('dur2', v === 2);
-    cellEl.classList.toggle('dur4', v === 4);
-    cellEl.classList.toggle('dur8', v === 8);
+    // 긴 음은 grid-column-end를 'span N'으로 지정해 정확히 N칸만큼만 넓어진다.
+    // (칸의 시작 위치(grid-column-start)는 buildGrid()에서 이미 'step+1'로 고정해뒀기 때문에,
+    //  다른 칸들이 켜지거나 꺼지는 것과 무관하게 이 칸의 위치는 절대 바뀌지 않는다.)
+    cellEl.style.gridColumnEnd = 'span ' + Math.max(1, v);
     const hasTremolo = type === 'tremolo' || type === 'semitone-tremolo' || type === 'step-tremolo';
     const hasSemitone = type === 'semitone' || type === 'semitone-tremolo';
     const hasStep = type === 'step' || type === 'step-tremolo';
@@ -876,7 +888,7 @@ function refreshGrid(){
     cellEl.textContent = (isOn && TYPE_MARK[type]) ? TYPE_MARK[type] : '';
     cellEl.style.display = ''; // 인라인 스타일을 비워서 CSS(.cell.on.tremolo 등의 display:flex 가운데 정렬)가 그대로 적용되게 함
   });
-  // 긴 노트에 가려지는 뒤쪽 칸들은 숨긴다
+  // 긴 노트에 가려지는 뒤쪽 칸들은 숨긴다 (숨겨져도 grid-column-start는 그대로라 다른 칸에 영향 없음)
   document.querySelectorAll('.cell').forEach(cellEl=>{
     const lane = +cellEl.dataset.lane, step = +cellEl.dataset.step;
     for(let k=1; k<MAX_DUR; k++){
@@ -908,12 +920,11 @@ function buildOrderedSong(){
 }
 
 /* ---------- 재생 / 일시정지 / 원하는 위치부터 재생 ---------- */
-const CELL_SLOT = 24;        // .cell 22px + 좌우 마진(1px*2)
-const BEAT_GROUP_EXTRA = 5;  // .cell.beat0 의 margin-left 추가분 (4박마다)
+const CELL_SLOT = 24;        // .row-cells의 grid-auto-columns(22px) + column-gap(2px)
 const LABEL_WIDTH = 40;      // .row-label 너비
-const BEAT_GROUP_STEPS = 16; // 4박 = 16칸(STEP_BEAT=0.25 기준)
+const BEAT_GROUP_STEPS = 16; // 4박 = 16칸(STEP_BEAT=0.25 기준) — beat0 표시(구간 구분선) 간격
 function stepToX(step){
-  return LABEL_WIDTH + step * CELL_SLOT + Math.floor(step / BEAT_GROUP_STEPS) * BEAT_GROUP_EXTRA;
+  return LABEL_WIDTH + step * CELL_SLOT; // beat0은 이제 여백이 아니라 테두리선이라 폭 계산에 영향 없음
 }
 
 let playbackStartStep = 0;
@@ -1154,6 +1165,7 @@ function importSongIntoGrid(bpm, songArr){
   for(let lane=0; lane<13; lane++){ cells[lane].fill(0); cellTypes[lane].fill('normal'); }
   selectedCells.clear();
   let step = 0;
+  let collisionCount = 0; // 같은 계이름·같은 타이밍에 노트가 겹쳐서 하나가 밀려난 횟수
   for(let i=0; i<songArr.length; i++){
     const [lane, beats, mark] = songArr[i];
     const gapSteps = Math.round(beats / STEP_BEAT);
@@ -1161,6 +1173,7 @@ function importSongIntoGrid(bpm, songArr){
     const type = mark === '///' ? 'tremolo' : mark === 'A' ? 'semitone' : mark === 'S' ? 'step'
                : mark === 'A///' ? 'semitone-tremolo' : mark === 'S///' ? 'step-tremolo' : 'normal';
     if(step < STEPS && lane >= 0 && lane < 13){
+      if(cells[lane][step] > 0) collisionCount++; // 같은 칸에 이미 음이 있으면(비정상 데이터) 뒤에 온 것으로 덮어씀 — 조용히 사라지지 않도록 집계
       const span = Math.min(durSteps, STEPS - step);
       for(let s=step; s<step+span; s++){ cells[lane][s] = 0; cellTypes[lane][s] = 'normal'; }
       cells[lane][step] = span;
@@ -1169,6 +1182,9 @@ function importSongIntoGrid(bpm, songArr){
     step += gapSteps;
   }
   refreshGrid();
+  if(collisionCount > 0 && typeof showEditorToast === 'function'){
+    showEditorToast(`⚠️ 같은 계이름·같은 타이밍에 겹치는 음이 ${collisionCount}개 있어서 일부가 덮어써졌어요. 붙여넣은 코드를 확인해주세요.`);
+  }
 }
 
 function checkIncomingEditPayload(){
