@@ -230,7 +230,7 @@ textarea#exportBox{
 <body>
 
 <div class="auth-status" id="authStatus"></div>
-<button id="textEditToggleBtn" class="btn small ghost" onclick="toggleTextEditMode()">✏️ 텍스트 편집</button>
+<button id="textEditToggleBtn" class="btn small ghost" onclick="toggleTextEditMode()">텍스트 편집하기</button>
 
 <h1>타로당 13현 고쟁 GAME 곡 편집기</h1>
 <p class="sub">칸을 클릭해서 음을 찍으면 곡이 만들어져요. 클릭하는 즉시 소리도 미리 들을 수 있어요.<br>다 만들었으면 '재생'으로 확인하고, '코드 내보내기'로 게임에 붙여넣을 코드를 복사하세요.</p>
@@ -272,7 +272,7 @@ textarea#exportBox{
       <button class="modal-close" onclick="closePublishModal()">✕</button>
     </div>
     <label>곡 이름</label>
-    <input type="text" id="pubName" placeholder="예: 나비야">
+    <input type="text" id="pubName" placeholder="예: 아리랑">
     <label>가수</label>
     <input type="text" id="pubArtist" placeholder="예: 전래동요">
     <label>패턴 제작자</label>
@@ -400,7 +400,7 @@ const EDITABLE_SELECTOR = 'h1, .sub, .guide, .modal-box label, .modal-head h2, .
 const NON_EDITABLE_IDS = new Set([
   'testScore','testCombo','testJudgment','editBannerText','authStatus',
   'testCountdownNum','testFinalScore','testFinalCombo',
-  'playBtn'
+  'playBtn','textEditToggleBtn'
 ]);
 
 function getEditableTextElements(){
@@ -452,7 +452,7 @@ function toggleTextEditMode(){
     }
   });
   const btn = document.getElementById('textEditToggleBtn');
-  if(btn) btn.textContent = textEditModeOn ? '✅ 편집 종료' : '✏️ 텍스트 편집';
+  if(btn) btn.textContent = textEditModeOn ? '💾 저장' : '텍스트 편집하기';
   if(textEditModeOn) showEditorToast('문구를 클릭해서 고치고, 다른 곳을 클릭하면 자동 저장돼요.');
 }
 document.addEventListener('focusout', (e)=>{
@@ -660,7 +660,10 @@ function buildGrid(){
     label.className = 'row-label';
     label.textContent = NOTES[lane];
     label.title = '클릭하면 이 음을 미리 들어볼 수 있어요';
-    label.addEventListener('click', ()=> playNote(lane));
+    label.addEventListener('click', ()=>{
+      const bend = aKeyDown ? 'semitone' : (sKeyDown ? 'step' : undefined);
+      playNote(lane, undefined, bend);
+    });
     row.appendChild(label);
     for(let step=0; step<STEPS; step++){
       const cell = document.createElement('div');
@@ -818,6 +821,7 @@ function refreshGrid(){
     cellEl.classList.toggle('on', isOn);
     cellEl.classList.toggle('dur2', v === 2);
     cellEl.classList.toggle('dur4', v === 4);
+    cellEl.classList.toggle('dur8', v === 8);
     const hasTremolo = type === 'tremolo' || type === 'semitone-tremolo' || type === 'step-tremolo';
     const hasSemitone = type === 'semitone' || type === 'semitone-tremolo';
     const hasStep = type === 'step' || type === 'step-tremolo';
