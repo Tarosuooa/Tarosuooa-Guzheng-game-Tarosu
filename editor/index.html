@@ -258,6 +258,7 @@ textarea#exportBox{
   <button class="btn small ghost" onclick="clearGrid()">전체 지우기</button>
   <button class="btn small" onclick="exportCode()">코드 내보내기</button>
   <button class="btn small" onclick="openPublishModal()">✅ 편집 완료</button>
+  <button class="btn small ghost" onclick="openImportCodeModal()">📋 코드 붙여넣기</button>
 </div>
 
 <div class="grid-wrap">
@@ -281,6 +282,24 @@ textarea#exportBox{
     <div class="modal-actions-row" style="margin-top:10px;">
       <button class="btn small" onclick="submitPublish()">등록하기</button>
       <button class="btn small ghost" onclick="closePublishModal()">취소</button>
+    </div>
+  </div>
+</div>
+
+<!-- 코드 붙여넣기: 'const BPM=...; const SONG=[...];' 형식의 코드를 그리드로 불러옴 -->
+<div class="modal-overlay" id="importCodeModal">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h2 id="importCodeModalTitle">코드 붙여넣기</h2>
+      <button class="modal-close" onclick="closeImportCodeModal()">✕</button>
+    </div>
+    <label>편집기에서 '코드 내보내기'로 뽑았던 코드를 그대로 붙여넣으세요</label>
+    <textarea id="importCodeText" rows="8" style="width:100%; box-sizing:border-box; font-family:monospace; font-size:12px; padding:8px; border:1px solid var(--paper-dark); border-radius:6px;" placeholder="const BPM = 100;&#10;const SONG = [&#10;  [5,0],&#10;  ...&#10;];"></textarea>
+    <div id="importCodeError" class="reg-error"></div>
+    <p class="modal-sub" style="margin-top:6px;">⚠️ 지금 그려둔 그리드 내용은 지워지고, 붙여넣은 코드로 통째로 바뀌어요. 필요하면 미리 '코드 내보내기'로 지금 내용을 복사해두세요.</p>
+    <div class="modal-actions-row" style="margin-top:10px;">
+      <button class="btn small" onclick="submitImportCode()">불러오기</button>
+      <button class="btn small ghost" onclick="closeImportCodeModal()">취소</button>
     </div>
   </div>
 </div>
@@ -1080,6 +1099,52 @@ function applyGridSnapshot(notes){
     cellTypes[n.lane][n.step] = n.type || 'normal';
   });
   refreshGrid();
+}
+
+// 게임의 곡 등록 창과 동일한 방식으로 'const BPM=...; const SONG=[...];' 코드를 해석한다
+function parseSongCode(codeText){
+  try{
+    const fn = new Function(codeText + '\n;return { BPM: BPM, SONG: SONG };');
+    const result = fn();
+    if(!result || typeof result.BPM !== 'number' || !Array.isArray(result.SONG) || result.SONG.length === 0) return null;
+    const validShape = result.SONG.every(n => Array.isArray(n) && (n.length === 2 || n.length === 3) &&
+      Number.isInteger(n[0]) && n[0] >= 0 && n[0] <= 12 && Number.isFinite(n[1]) && n[1] >= 0 &&
+      (n.length === 2 || typeof n[2] === 'string'));
+    if(!validShape) return null;
+    return result;
+  }catch(e){
+    console.error('코드 해석 실패', e);
+    return null;
+  }
+}
+
+function openImportCodeModal(){
+  document.getElementById('importCodeText').value = '';
+  document.getElementById('importCodeError').textContent = '';
+  document.getElementById('importCodeModal').classList.add('show');
+}
+function closeImportCodeModal(){
+  document.getElementById('importCodeModal').classList.remove('show');
+}
+function submitImportCode(){
+  const code = document.getElementById('importCodeText').value.trim();
+  const errEl = document.getElementById('importCodeError');
+  errEl.textContent = '';
+  if(!code){ errEl.textContent = '코드를 붙여넣어주세요'; return; }
+  const parsed = parseSongCode(code);
+  if(!parsed){
+    errEl.textContent = '코드를 해석하지 못했어요. \'코드 내보내기\' 결과를 그대로 붙여넣었는지 확인해주세요.';
+    return;
+  }
+  pushHistory(); // 불러오기 전 상태로 되돌릴 수 있도록 기록
+  document.getElementById('bpmInput').value = parsed.BPM;
+  importSongIntoGrid(parsed.BPM, parsed.SONG);
+  // 붙여넣은 코드는 특정 등록곡과 연결된 게 아니므로, 기존 '수정 중' 상태는 해제한다
+  editingSongId = null;
+  const banner = document.getElementById('editBanner');
+  if(banner) banner.style.display = 'none';
+  closeImportCodeModal();
+  showEditorToast('코드를 불러왔어요!');
 }
 
 function importSongIntoGrid(bpm, songArr){
