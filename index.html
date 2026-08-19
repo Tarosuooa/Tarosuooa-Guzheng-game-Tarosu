@@ -157,6 +157,18 @@ h1{
 }
 .countdown-screen.show{ display:flex; }
 
+/* 무대 정중앙에 크게 뜨는 '연주 시작' 버튼 (아직 시작 전이거나, 처음부터를 눌렀을 때만 보임) */
+.start-overlay{
+  position:absolute; inset:0; z-index:15; border-radius:6px;
+  display:flex; align-items:center; justify-content:center;
+  background:rgba(20,13,8,0.35);
+}
+.start-overlay.hidden{ display:none; }
+.start-btn-big{
+  font-size:20px; font-weight:800; padding:18px 42px; border-radius:36px;
+  box-shadow:0 8px 26px rgba(0,0,0,0.4);
+}
+
 .pause-overlay{
   display:none; position:absolute; inset:0; z-index:60; background:rgba(35,29,23,0.72);
   color:#fdf6e6; flex-direction:column; align-items:center; justify-content:center;
@@ -275,6 +287,9 @@ h1{
 <div class="stage-wrap">
   <div class="stage" id="stage">
     <div class="judge-line"></div>
+    <div class="start-overlay" id="startOverlay">
+      <button class="btn start-btn-big" id="startBtn" onclick="startGame()">▶ 연주 시작</button>
+    </div>
     <div class="countdown-screen" id="countdownScreen">
       <div id="countdownNum">3</div>
     </div>
@@ -296,7 +311,6 @@ h1{
 </div>
 
 <div class="controls">
-  <button class="btn" id="startBtn" onclick="startGame()">연주 시작</button>
   <button class="btn ghost" id="pauseBtn" onclick="togglePause()">⏸ 일시정지</button>
   <button class="btn ghost" onclick="restartGame()">처음부터</button>
   <button class="btn ghost" onclick="openSongList()">📋 곡 목록</button>
@@ -877,6 +891,7 @@ function togglePause(){
 function startGame(){
   if(running || counting) return;
   if(!SONG || SONG.length === 0){ showToastMsg('곡을 불러오는 중이에요. 잠시 후 다시 시도해주세요.'); return; }
+  document.getElementById('startOverlay').classList.add('hidden');
   counting = true;
   paused = false;
   document.getElementById('pauseOverlay').classList.remove('show');
@@ -979,6 +994,7 @@ function restartGame(){
   stage.querySelectorAll('.note, .hit-pop').forEach(el=>el.remove());
   endScreen.classList.remove('show');
   document.getElementById('countdownScreen').classList.remove('show');
+  document.getElementById('startOverlay').classList.remove('hidden'); // 정중앙 '연주 시작' 버튼을 다시 보여줌
   score=0; combo=0;
   scoreEl.textContent='0'; comboEl.textContent='0'; judgmentEl.textContent='\u00a0';
   startBtn.disabled = false;
@@ -989,11 +1005,29 @@ const SONGS_COLLECTION = 'songs';
 const SONG_STORE_KEY = 'tarodang_guzheng_songs'; // 예전 버전(이 브라우저에만 저장)의 곡 데이터 — 서버로 옮길 때만 사용
 let cachedSongList = []; // 마지막으로 불러온 곡 목록 (플레이/수정 등에서 다시 불러오지 않고 재사용)
 
+// Firestore는 배열 안에 배열을 직접 넣는 걸(중첩 배열) 허용하지 않는다.
+// 그래서 곡 데이터([레인, 박자, 표시?] 튜플들의 배열)는 저장할 때 객체 배열로 바꾸고,
+// 불러올 때 다시 원래의 튜플 배열 형태로 되돌린다 (그래야 SONG.forEach(([lane,beats])=>...) 등
+// 기존 코드를 하나도 안 건드리고 그대로 쓸 수 있다).
+function songToFirestoreSafe(songArr){
+  return songArr.map(n => ({ l: n[0], b: n[1], m: n[2] || null }));
+}
+function songFromFirestoreSafe(fsArr){
+  if(!Array.isArray(fsArr)) return [];
+  return fsArr.map(n => {
+    if(Array.isArray(n)) return n; // 혹시 예전 형식(배열)이 남아있으면 그대로 사용 (구버전 호환)
+    return n.m ? [n.l, n.b, n.m] : [n.l, n.b];
+  });
+}
+
 async function fetchSongList(){
   if(!fbDb) return [];
   try{
     const snap = await fbDb.collection(SONGS_COLLECTION).orderBy('createdAt', 'desc').get();
-    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    return snap.docs.map(d => {
+      const data = d.data();
+      return { id: d.id, ...data, song: songFromFirestoreSafe(data.song) };
+    });
   }catch(e){
     console.error('곡 목록 불러오기 실패', e);
     return [];
@@ -1193,8 +1227,17 @@ async function saveSongEditMeta(){
 // '곡 편집기에서 수정': 이 곡의 패턴 데이터를 편집기로 넘겨서, 코드 복사 없이 그리드에서 바로 고칠 수 있게 함
 // (편집기는 같은 브라우저의 새 탭으로 열리므로, 이 handoff 값만은 그대로 localStorage를 임시 통로로 사용한다)
 const EDIT_HANDOFF_KEY = 'tarodang_guzheng_edit_payload';
+// 편집기는 그리드가 넓고 정밀한 클릭/드래그가 필요해서 PC 환경 전용으로 안내한다.
+// (다른 곳에서 쓰는 모바일 가상 패드 기준과 동일하게 900px를 경계로 판단)
+function isMobileViewport(){
+  return window.matchMedia('(max-width:900px)').matches;
+}
 function openSongInEditor(){
   if(!editingSongId) return;
+  if(isMobileViewport()){
+    alert('편집기는 PC 환경에서만 접속 가능합니다');
+    return;
+  }
   const song = cachedSongList.find(s => s.id === editingSongId);
   if(!song) return;
   try{
@@ -1305,7 +1348,7 @@ async function submitSongRegister(){
     await fbDb.collection(SONGS_COLLECTION).add({
       name, artist, maker,
       bpm: parsed.BPM,
-      song: parsed.SONG,
+      song: songToFirestoreSafe(parsed.SONG),
       notesSnapshot: null,
       createdAt: Date.now(),
       uploaderUid: fbAuth.currentUser.uid
@@ -1315,7 +1358,8 @@ async function submitSongRegister(){
     showToastMsg('곡이 등록되었어요!');
   }catch(e){
     console.error('곡 등록 실패', e);
-    errEl.textContent = '등록에 실패했어요.';
+    const codeMsg = e && e.code ? `(${e.code})` : '';
+    errEl.textContent = `등록에 실패했어요 ${codeMsg}.`;
   }
 }
 
