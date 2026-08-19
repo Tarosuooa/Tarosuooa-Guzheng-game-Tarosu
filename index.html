@@ -332,7 +332,7 @@ h1{
     <p class="modal-sub">직접 만든 곡을 등록하고, 다른 사람이 만든 곡을 골라서 플레이해보세요.</p>
     <div class="modal-actions-row">
       <button class="btn small" onclick="openSongRegister()">＋ 곡 등록</button>
-      <button class="btn small ghost" onclick="window.open('editor/index.html','_blank')">🎼 편집기</button>
+      <button class="btn small ghost" onclick="openEditorDirect()">🎼 편집기</button>
     </div>
     <div id="songListItems" class="song-list-items"></div>
   </div>
@@ -1231,6 +1231,17 @@ const EDIT_HANDOFF_KEY = 'tarodang_guzheng_edit_payload';
 // (다른 곳에서 쓰는 모바일 가상 패드 기준과 동일하게 900px를 경계로 판단)
 function isMobileViewport(){
   return window.matchMedia('(max-width:900px)').matches;
+}
+// 편집기로 이동하는 모든 버튼이 공통으로 거치는 진입점: 모바일이면 안내만 띄우고 막는다
+function goToEditor(url){
+  if(isMobileViewport()){
+    alert('편집기는 PC 환경에서만 접속 가능합니다');
+    return;
+  }
+  window.open(url, '_blank');
+}
+function openEditorDirect(){
+  goToEditor('editor/index.html');
 }
 function openSongInEditor(){
   if(!editingSongId) return;
