@@ -741,10 +741,14 @@ function buildLanes(){
     hitZone.className = 'lane-hit';
     hitZone.addEventListener('pointerdown', (e)=>{
       e.preventDefault();
-      onLaneTap(i, lane);
-      beginTremolo(i, lane);
-      dragPointerActive = true;
-      lastDragLane = i;
+      if(e.pointerType === 'touch'){
+        startTouchSwipeGesture(e, i, lane);
+      }else{
+        onLaneTap(i, lane);
+        beginTremolo(i, lane);
+        dragPointerActive = true;
+        lastDragLane = i;
+      }
     });
     hitZone.addEventListener('pointerup', stopTremolo);
     hitZone.addEventListener('pointerleave', stopTremolo);
@@ -756,6 +760,52 @@ function buildLanes(){
 }
 let laneEls = [];
 buildLanes();
+
+/* ---------- 모바일: 현을 누른 채 좌우로 슬라이드하면 A(왼쪽)/S(오른쪽)를 누른 것과 동일하게 판정됨 ----------
+   판정과 소리를 동시에 정확히 내야 하므로, 살짝(SWIPE_DECIDE_MS)만 기다렸다가
+   그 사이에 임계값(SWIPE_THRESHOLD_PX)만큼 옆으로 움직였으면 반음/한 키로, 아니면 그냥 일반 탭으로 확정한다. */
+const SWIPE_THRESHOLD_PX = 14;
+const SWIPE_DECIDE_MS = 55;
+function startTouchSwipeGesture(e, laneIndex, laneEl){
+  const startX = e.clientX;
+  const pointerId = e.pointerId;
+  let decided = false;
+
+  function finalize(bend){
+    if(decided) return;
+    decided = true;
+    cleanup();
+    if(bend){
+      onLaneTap(laneIndex, laneEl, false, bend); // 슬라이드로 방향이 확정된 경우
+    }else{
+      onLaneTap(laneIndex, laneEl); // 슬라이드가 없으면 기존처럼 가상 패드(A/S)를 누르고 있는 상태를 그대로 따름
+      beginTremolo(laneIndex, laneEl); // 슬라이드가 아니라 그냥 누르고 있으면 트레몰로도 그대로 동작
+    }
+    dragPointerActive = true;
+    lastDragLane = laneIndex;
+  }
+  function onMove(ev){
+    if(ev.pointerId !== pointerId) return;
+    const dx = ev.clientX - startX;
+    if(Math.abs(dx) >= SWIPE_THRESHOLD_PX){
+      finalize(dx < 0 ? 'semitone' : 'step'); // 왼쪽=A(반음), 오른쪽=S(한 키)
+    }
+  }
+  function onUp(ev){
+    if(ev.pointerId !== pointerId) return;
+    finalize(null); // 슬라이드 없이 뗐으면 그냥 일반 탭
+  }
+  function cleanup(){
+    clearTimeout(timer);
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    window.removeEventListener('pointercancel', onUp);
+  }
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp);
+  window.addEventListener('pointercancel', onUp);
+  const timer = setTimeout(()=> finalize(null), SWIPE_DECIDE_MS);
+}
 
 /* ---------- 마우스(손가락)를 누른 채 위/아래로 쭉 훑으면, 지나간 줄들이 순서대로 재생됨 ---------- */
 let dragPointerActive = false;
@@ -845,8 +895,9 @@ function tick(now){
   rafId = requestAnimationFrame(tick);
 }
 
-function onLaneTap(laneIndex, laneEl, isTremoloTick){
-  const bend = aKeyDown ? 'semitone' : (sKeyDown ? 'step' : null);
+function onLaneTap(laneIndex, laneEl, isTremoloTick, forcedBend){
+  // forcedBend가 주어지면(모바일 좌우 슬라이드) 그 값을 그대로 쓰고, 아니면 기존처럼 키보드 A/S 상태를 따른다
+  const bend = forcedBend !== undefined ? forcedBend : (aKeyDown ? 'semitone' : (sKeyDown ? 'step' : null));
   playNote(laneIndex, masterVolume, bend);
   laneEl.classList.add('flash');
   setTimeout(()=>laneEl.classList.remove('flash'), 120);
