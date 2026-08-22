@@ -646,6 +646,13 @@ function saveTextOverride(el){
 }
 
 let textEditModeOn = false;
+// 텍스트 편집 중에 실수로 탭/창을 닫거나 다른 페이지로 이동하면, 저장 안 한 내용이 사라질 수 있으니 브라우저가 확인 팝업을 띄우게 한다.
+// (각 칸은 포커스를 벗어날 때 자동 저장되지만, 지금 막 입력 중인 칸은 아직 저장 전일 수 있다)
+window.addEventListener('beforeunload', (e)=>{
+  if(!textEditModeOn) return;
+  e.preventDefault();
+  e.returnValue = '';
+});
 function toggleTextEditMode(){
   textEditModeOn = !textEditModeOn;
   document.querySelectorAll('[data-tkey]').forEach(el=>{
@@ -1140,7 +1147,16 @@ let movingSelection = false;
 let moveAnchorLane = 0;
 let moveAnchorStep = 0;
 let lastSelectionAnchor = null; // {lane, step} - Shift+클릭 범위 선택의 기준점(마지막으로 선택했던 노트)
-document.addEventListener('mouseup', ()=>{ dragging = false; movingSelection = false; });
+// 드래그/이동 상태를 확실히 풀어주는 리스너들.
+// 'mouseup' 하나만 믿으면, 마우스 버튼을 브라우저 창 밖에서 놓았을 때(예: 창 경계 밖으로 나가서 뗀 경우)
+// 이 이벤트 자체가 안 잡혀서 dragging이 계속 true로 남아, 이후 커서만 움직여도 칸이 계속 칠해지는 버그가 있었다.
+// 그래서 pointerup/pointercancel과, 창 포커스를 잃거나 마우스가 문서 밖으로 나가는 경우까지 전부 안전망으로 잡아준다.
+function resetDragState(){ dragging = false; movingSelection = false; }
+document.addEventListener('mouseup', resetDragState);
+document.addEventListener('pointerup', resetDragState);
+document.addEventListener('pointercancel', resetDragState);
+window.addEventListener('blur', resetDragState);
+document.addEventListener('mouseleave', (e)=>{ if(!e.relatedTarget) resetDragState(); }); // 마우스가 브라우저 창 밖으로 나갈 때
 
 /* ---------- 모바일 터치 전용 그리드 제스처 ----------
    PC의 드래그 페인트/오른쪽 클릭 지우기는 손가락으로는 자연스럽지 않고, 가로 스크롤과도 충돌하므로
