@@ -102,6 +102,7 @@ h1{ font-size:20px; color:var(--wood-deep); font-family:'Nanum Myeongjo',serif; 
 .cell{
   height:22px; border-radius:3px; /* 폭은 grid 트랙 크기를 그대로 따름 (span N일 때 여러 칸만큼 자동으로 늘어남) */
   background:rgba(255,255,255,0.06); cursor:pointer; position:relative;
+  touch-action:manipulation; /* 더블탭 확대만 막고, 가로로 밀면 그리드가 정상적으로 스크롤되게 함 */
 }
 .cell:hover{ background:rgba(220,181,106,0.25); }
 .cell.on{ background:var(--gold-bright); }
@@ -119,16 +120,16 @@ h1{ font-size:20px; color:var(--wood-deep); font-family:'Nanum Myeongjo',serif; 
 .ruler-cell:hover{ background:rgba(255,255,255,0.18); }
 .ruler-cell.beat0{ }
 .ruler-cell.start-marker{ background:#ff5a5a; }
-/* 노트 표시: shift+클릭(또는 '트레몰로' 버튼)=///, a+클릭(또는 '반음 UP')=A, s+클릭(또는 '한 키 UP')=S
+/* 노트 표시: shift+클릭(또는 '트레몰로' 버튼)=///, a+클릭(또는 '반음 UP')=A, s+클릭(또는 '반음 UP+2')=S2, d+클릭(또는 '한 키 UP')=D
    블록 색은 일반 노트와 동일하게 유지하고, 표시 글자만 블록보다 어두운 색으로 얹는다 */
-.cell.on.tremolo, .cell.on.semitone, .cell.on.step{
+.cell.on.tremolo, .cell.on.semitone, .cell.on.semitone2, .cell.on.step{
   display:flex; align-items:center; justify-content:center;
   font-weight:800; letter-spacing:-1px; color:var(--wood-deep);
 }
 .cell.on.tremolo{ font-size:11px; }
-.cell.on.semitone, .cell.on.step{ font-size:12px; }
-.cell.on.tremolo.semitone, .cell.on.tremolo.step{ font-size:9px; letter-spacing:-1.5px; }
-.row.teal .cell.on.tremolo, .row.teal .cell.on.semitone, .row.teal .cell.on.step{ color:#0a4a47; }
+.cell.on.semitone, .cell.on.semitone2, .cell.on.step{ font-size:11px; }
+.cell.on.tremolo.semitone, .cell.on.tremolo.semitone2, .cell.on.tremolo.step{ font-size:9px; letter-spacing:-1.5px; }
+.row.teal .cell.on.tremolo, .row.teal .cell.on.semitone, .row.teal .cell.on.semitone2, .row.teal .cell.on.step{ color:#0a4a47; }
 /* Ctrl+클릭 다중 선택 표시 */
 .cell.selected{ outline:2px solid #4da6ff; outline-offset:-1px; cursor:grab; }
 
@@ -157,6 +158,7 @@ h1{ font-size:20px; color:var(--wood-deep); font-family:'Nanum Myeongjo',serif; 
   padding:5px 12px; border-radius:14px; font-size:12.5px; cursor:pointer;
 }
 .note-btn.active{ background:var(--jade); border-color:var(--jade); color:#fff; }
+.note-btn.active[data-bend="semitone2"]{ background:#8a4fd1; border-color:#8a4fd1; }
 .note-btn.active[data-bend="step"]{ background:var(--plum); border-color:var(--plum); }
 .note-btn.active[data-type="tremolo"]{ background:var(--wood); border-color:var(--wood); }
 .playhead{
@@ -178,6 +180,12 @@ h1{ font-size:20px; color:var(--wood-deep); font-family:'Nanum Myeongjo',serif; 
 }
 .fmt-btn:hover{ background:rgba(220,181,106,0.2); }
 .fmt-sep{ width:1px; height:18px; background:var(--paper-dark); margin:0 2px; }
+.nudge-btn{
+  width:30px; height:28px; border:1px solid var(--paper-dark); border-radius:6px;
+  background:#fff; color:var(--wood-deep); font-size:13px; cursor:pointer;
+}
+.nudge-btn:hover{ background:rgba(220,181,106,0.2); }
+.nudge-btn:active{ background:var(--gold-bright); }
 .fmt-swatch{
   width:20px; height:20px; border-radius:50%; border:1px solid rgba(0,0,0,0.25); cursor:pointer; padding:0;
 }
@@ -334,6 +342,7 @@ textarea#exportBox{
       <div class="edit-toolbar-row">
         <span style="color:var(--ink-soft); font-size:12.5px;">음 표시(중복 적용 가능):</span>
         <button class="note-btn" data-bend="semitone" onclick="toggleBend('semitone', this)">반음 UP</button>
+        <button class="note-btn" data-bend="semitone2" onclick="toggleBend('semitone2', this)" title="B·F#현에서만 실제로 적용됩니다">반음 UP+2</button>
         <button class="note-btn" data-bend="step" onclick="toggleBend('step', this)">한 키 UP</button>
         <button class="note-btn" data-type="tremolo" onclick="toggleTremoloMode(this)">트레몰로 추가</button>
       </div>
@@ -347,6 +356,14 @@ textarea#exportBox{
   <button class="btn small" onclick="openPublishModal()">✅ 편집 완료</button>
   <button class="btn small ghost" onclick="openImportCodeModal()">📋 코드 붙여넣기</button>
   <button class="btn small ghost" onclick="openShortcutsModal()">⌨️ 단축키 안내</button>
+  <span class="fmt-sep"></span>
+  <span style="color:var(--ink-soft); font-size:12.5px;">선택 이동:</span>
+  <button class="nudge-btn" onclick="nudgeSelection(-1,0)" title="계이름 위로">▲</button>
+  <button class="nudge-btn" onclick="nudgeSelection(1,0)" title="계이름 아래로">▼</button>
+  <button class="nudge-btn" onclick="nudgeSelection(0,-1)" title="한 칸 앞으로">◀</button>
+  <button class="nudge-btn" onclick="nudgeSelection(0,1)" title="한 칸 뒤로">▶</button>
+  <button class="btn small ghost" onclick="selectAllNotes()">전체 선택</button>
+  <button class="btn small ghost" onclick="deleteSelectedNotes()">선택 삭제</button>
 </div>
 
 <div class="grid-wrap">
@@ -436,8 +453,8 @@ textarea#exportBox{
   <b>사용법</b><br>
   1. 원하는 계이름 줄(왼쪽 표시)에서, 원하는 타이밍(칸)을 클릭하면 노란 점이 찍히고 소리가 나요. 다시 클릭하면 지워져요.<br>
   2. 음 길이: <b>Q</b>=0.25박, <b>W</b>=0.5박, <b>E</b>=0.75박, <b>R</b>=1박, <b>T</b>=1.25박, <b>Y</b>=1.5박, <b>U</b>=1.75박, <b>I</b>=2박 (또는 위쪽 버튼 클릭).<br>
-  3. <b>Shift+클릭</b>은 <b>///</b>(트레몰로), <b>A+클릭</b>은 <b>A</b>(반음 UP), <b>S+클릭</b>은 <b>S</b>(한 키 UP) 표시로 찍혀요. <b>Shift+A+클릭</b>처럼 동시에 누르면 반음/한 키 UP과 트레몰로를 함께 적용할 수 있어요(A///, S///).<br>
-  &nbsp;&nbsp;&nbsp;키보드 대신 위쪽 '반음 UP' · '한 키 UP' · '트레몰로 추가' 버튼을 눌러서 모드를 켠 채로 계속 클릭해도 돼요 (버튼은 서로 독립적이라 같이 켤 수 있어요).<br>
+  3. <b>Shift+클릭</b>은 <b>///</b>(트레몰로), <b>A+클릭</b>은 <b>A</b>(반음 UP), <b>S+클릭</b>은 <b>S2</b>(반음 UP+2, B·F#현 전용), <b>D+클릭</b>은 <b>D</b>(한 키 UP) 표시로 찍혀요. <b>Shift+A+클릭</b>처럼 동시에 누르면 반음/한 키 UP과 트레몰로를 함께 적용할 수 있어요(A///, S2///, D///).<br>
+  &nbsp;&nbsp;&nbsp;키보드 대신 위쪽 '반음 UP' · '반음 UP+2' · '한 키 UP' · '트레몰로 추가' 버튼을 눌러서 모드를 켠 채로 계속 클릭해도 돼요 (버튼은 서로 독립적이라 같이 켤 수 있어요). 반음 UP+2는 B·F#현이 아니면 자동으로 일반 반음으로 대체돼요.<br>
   4. 이 표시들은 실제 게임에서 다가오는 점 위에 그대로 나타나고, 표시된 조작(반음/한 키 올려 치기, 트레몰로)을 하지 않으면 MISS 판정이 나요.<br>
   5. <b>Ctrl+클릭</b>으로 여러 음을 선택할 수 있고(다시 Ctrl+클릭하면 해제), <b>Ctrl+A</b>로 전체 선택, 선택된 상태에서 <b>Delete/Backspace</b>로 한 번에 지울 수 있어요. <b>Esc</b>는 선택 해제예요.<br>
   &nbsp;&nbsp;&nbsp;한 음을 클릭한 뒤 다른 음을 <b>Shift+클릭</b>하면, 그 사이 타이밍 범위에 있는 모든 계이름의 음이 한 번에 선택돼요.<br>
@@ -707,6 +724,7 @@ async function playNote(lane, vol, bend){
   if(!freq) return;
   let cacheKey = note;
   if(bend === 'semitone'){ freq = freq * Math.pow(2, 1/12); cacheKey = note + '#semi'; }
+  else if(bend === 'semitone2'){ freq = freq * Math.pow(2, 2/12); cacheKey = note + '#semi2'; }
   else if(bend === 'step'){
     const nextNote = NOTES[lane+1];
     if(nextNote && NOTE_FREQ[nextNote]){ freq = NOTE_FREQ[nextNote]; cacheKey = nextNote; }
@@ -726,7 +744,7 @@ async function playNote(lane, vol, bend){
    a+클릭=반음, s+클릭=한 키 위로
    Q/W/E/R/T/Y/U/I=0.25/0.5/0.75/1/1.25/1.5/1.75/2박 선택, Ctrl+Z=뒤로, Ctrl+Y=다시 실행, Ctrl+A=전체 선택,
    Delete/Backspace=선택 삭제, Esc=선택 해제 */
-let aKeyDown = false, sKeyDown = false;
+let aKeyDown = false, sKeyDown = false, dKeyDown = false;
 const SPACEBAR_EXEMPT_IDS = new Set(['volumeSlider', 'exportBox']); // 볼륨바·코드창은 글자 입력용이 아니라서, 포커스가 있어도 스페이스바 단축키를 막지 않는다
 
 /* ===================== 단축키 안내 패널 (관리자는 키를 다시 지정하거나 설명을 고칠 수 있음) =====================
@@ -749,7 +767,8 @@ const SHORTCUT_DEFAULTS = [
   { id:'deleteSel', type:'fixed', key:'Delete / Backspace', desc:'선택한 음 삭제' },
   { id:'escapeSel', type:'fixed', key:'Esc', desc:'선택 해제' },
   { id:'semitoneMod', type:'fixed', key:'A + 클릭', desc:'반음 UP 표시로 찍기' },
-  { id:'stepMod', type:'fixed', key:'S + 클릭', desc:'한 키 UP 표시로 찍기' },
+  { id:'semitone2Mod', type:'fixed', key:'S + 클릭', desc:'반음 UP+2 표시로 찍기 (B·F#현에서만 적용됨)' },
+  { id:'stepMod', type:'fixed', key:'D + 클릭', desc:'한 키 UP 표시로 찍기' },
   { id:'tremoloMod', type:'fixed', key:'Shift + 클릭', desc:'트레몰로(///) 표시로 찍기' },
   { id:'rangeSel', type:'fixed', key:'Shift + 블록 클릭', desc:'마지막 선택 지점과의 사이 범위를 전부 선택' },
   { id:'ctrlClick', type:'fixed', key:'Ctrl + 클릭', desc:'클릭한 블록을 선택 목록에 추가/제외' },
@@ -851,6 +870,7 @@ window.addEventListener('keydown', (e)=>{
 
   if(k==='a' && !(e.ctrlKey||e.metaKey) && !typing) aKeyDown = true;
   if(k==='s' && !(e.ctrlKey||e.metaKey) && !typing) sKeyDown = true;
+  if(k==='d' && !(e.ctrlKey||e.metaKey) && !typing) dKeyDown = true;
   if(typing) return; // 입력창에 타이핑 중일 땐 아래 단축키들을 막는다
 
   if((e.ctrlKey||e.metaKey) && k==='z'){ e.preventDefault(); undo(); return; }
@@ -872,13 +892,16 @@ window.addEventListener('keyup', (e)=>{
   const k = e.key.toLowerCase();
   if(k==='a') aKeyDown = false;
   if(k==='s') sKeyDown = false;
+  if(k==='d') dKeyDown = false;
 });
-window.addEventListener('blur', ()=>{ aKeyDown=false; sKeyDown=false; });
+window.addEventListener('blur', ()=>{ aKeyDown=false; sKeyDown=false; dKeyDown=false; });
 
-/* 위쪽 툴바의 '반음 UP' · '한 키 UP' · '트레몰로 추가' 버튼: 눌러서 모드를 켜면
-   키보드 없이도 계속 그 표시로 클릭할 수 있다 (다시 누르면 꺼짐). 반음/한 키 UP은 서로 배타적이지만,
-   트레몰로는 독립적인 스위치라서 반음 UP과 트레몰로를 동시에 켜서 'A///'처럼 함께 적용할 수 있다. */
-let currentBend = 'none'; // 'none' | 'semitone' | 'step'
+/* 위쪽 툴바의 '반음 UP' · '반음 UP+2' · '한 키 UP' · '트레몰로 추가' 버튼: 눌러서 모드를 켜면
+   키보드 없이도 계속 그 표시로 클릭할 수 있다 (다시 누르면 꺼짐). 반음/반음+2/한 키 UP은 서로 배타적이지만,
+   트레몰로는 독립적인 스위치라서 함께 켜서 'A///'처럼 적용할 수 있다.
+   반음+2는 오음계 특성상 B·F#현에서만 실제로 새로운 음이라, 그 줄에서만 허용된다. */
+const SEMITONE2_LANES = new Set([1,4,6,9,11]); // B3,F#4,B4,F#5,B5
+let currentBend = 'none'; // 'none' | 'semitone' | 'semitone2' | 'step'
 let currentTremoloMode = false;
 function toggleBend(type, btn){
   currentBend = (currentBend === type) ? 'none' : type;
@@ -895,27 +918,37 @@ function composeNoteType(bend, tremolo){
   if(tremolo) return 'tremolo';
   return 'normal';
 }
-function resolveNoteType(shiftKey){
+// bend를 실제로 그 줄에 적용해도 되는지 확인한다. 반음+2를 B·F# 이외의 줄에 적용하려 하면
+// 의미가 없는 중복(옆 줄과 같은 음)이 되므로 일반 반음으로 대체한다.
+function sanitizeBendForLane(lane, bend){
+  if(bend === 'semitone2' && !SEMITONE2_LANES.has(lane)) return 'semitone';
+  return bend;
+}
+function resolveNoteType(shiftKey, lane){
   let bend = currentBend;
   if(aKeyDown) bend = 'semitone';
-  else if(sKeyDown) bend = 'step';
+  else if(sKeyDown) bend = 'semitone2';
+  else if(dKeyDown) bend = 'step';
+  if(lane !== undefined) bend = sanitizeBendForLane(lane, bend);
   const tremolo = shiftKey || currentTremoloMode;
   return composeNoteType(bend, tremolo);
 }
 
 /* ---------- 그리드 ---------- */
 // cells[lane][step] = 0(없음) | 1(0.25박) | 2(0.5박) | 4(1박) | 8(2박) 노트 시작  ※ 값의 단위는 '칸 수'
-// cellTypes[lane][step] = 'normal' | 'tremolo'(///) | 'semitone'(A) | 'step'(S) | 'semitone-tremolo'(A///) | 'step-tremolo'(S///)
+// cellTypes[lane][step] = 'normal' | 'tremolo'(///) | 'semitone'(A) | 'semitone2'(S2, B·F#현 전용) | 'step'(D)
+//                        | 'semitone-tremolo'(A///) | 'semitone2-tremolo'(S2///) | 'step-tremolo'(D///)
 const cells = NOTES.map(()=>new Array(STEPS).fill(0));
 const cellTypes = NOTES.map(()=>new Array(STEPS).fill('normal'));
 const MAX_DUR = 8; // 현재 지원하는 최대 음 길이(칸 수) = 2박
 let currentDur = 4; // 기본값: 1박(4칸)
 const TYPE_MARK = {
-  tremolo:'///', semitone:'A', step:'S',
-  'semitone-tremolo':'A///', 'step-tremolo':'S///'
+  tremolo:'///', semitone:'A', semitone2:'S2', step:'D',
+  'semitone-tremolo':'A///', 'semitone2-tremolo':'S2///', 'step-tremolo':'D///'
 };
 const TYPE_BEND = {
   semitone:'semitone', 'semitone-tremolo':'semitone',
+  semitone2:'semitone2', 'semitone2-tremolo':'semitone2',
   step:'step', 'step-tremolo':'step'
 }; // 미리듣기 재생용 pitch bend 매핑
 
@@ -1015,7 +1048,8 @@ function buildGrid(){
     label.textContent = NOTES[lane];
     label.title = '클릭하면 이 음을 미리 들어볼 수 있어요';
     label.addEventListener('click', ()=>{
-      const bend = aKeyDown ? 'semitone' : (sKeyDown ? 'step' : undefined);
+      let bend = aKeyDown ? 'semitone' : (sKeyDown ? 'semitone2' : (dKeyDown ? 'step' : undefined));
+      if(bend) bend = sanitizeBendForLane(lane, bend);
       playNote(lane, undefined, bend);
     });
     row.appendChild(label);
@@ -1027,7 +1061,13 @@ function buildGrid(){
       cell.style.gridColumnStart = step + 1; // 항상 정확히 'step번째' 칸에 고정 (다른 칸의 폭과 무관)
       cell.dataset.lane = lane;
       cell.dataset.step = step;
-      cell.addEventListener('mousedown', (e)=>{
+      cell.addEventListener('pointerdown', (e)=>{
+        if(e.pointerType === 'touch'){
+          // 여기서 preventDefault를 하면 브라우저가 가로 스크롤 제스처 자체를 시작 못 할 수 있어서,
+          // 더블탭 확대 방지는 CSS(touch-action:manipulation)에 맡기고 여기선 기본 동작을 막지 않는다.
+          startTouchCellGesture(e, lane, step, cell);
+          return;
+        }
         e.preventDefault();
         if(e.button !== 0 && e.button !== 2) return;
         if(e.button === 0 && (e.ctrlKey || e.metaKey)){
@@ -1066,7 +1106,7 @@ function buildGrid(){
         if(selectedCells.size > 0){ selectedCells.clear(); refreshGrid(); }
         dragging = true;
         dragAdding = (e.button === 0); // 왼쪽 버튼=칠하기, 오른쪽 버튼=지우기
-        dragType = resolveNoteType(e.shiftKey); // 이번 드래그 동안 적용할 노트 표시(트레몰로/반음/한 키/일반)
+        dragType = resolveNoteType(e.shiftKey, lane); // 이번 드래그 동안 적용할 노트 표시(트레몰로/반음/반음+2/한 키/일반)
         paintCell(lane, step, dragAdding, dragType);
       });
       cell.addEventListener('mouseenter', ()=>{
@@ -1102,6 +1142,64 @@ let moveAnchorStep = 0;
 let lastSelectionAnchor = null; // {lane, step} - Shift+클릭 범위 선택의 기준점(마지막으로 선택했던 노트)
 document.addEventListener('mouseup', ()=>{ dragging = false; movingSelection = false; });
 
+/* ---------- 모바일 터치 전용 그리드 제스처 ----------
+   PC의 드래그 페인트/오른쪽 클릭 지우기는 손가락으로는 자연스럽지 않고, 가로 스크롤과도 충돌하므로
+   터치에서는 아래처럼 '탭 하나 = 동작 하나'로 단순화한다.
+   - 짧게 탭(움직임 거의 없음): 빈 칸이면 칠하기, 이미 있는 음이면 선택(다음에 나올 이동 버튼으로 옮길 수 있음)
+   - 꾹 눌렀다 뗌(롱프레스, 움직임 거의 없음): 있는 음이면 지우기
+   - 손가락을 옆으로 크게 움직이면(스크롤 의도로 판단): 아무 동작도 하지 않고 화면 스크롤에 맡긴다 */
+const TOUCH_TAP_TOLERANCE_PX = 12;
+const TOUCH_LONG_PRESS_MS = 480;
+function startTouchCellGesture(e, lane, step, cellEl){
+  const pointerId = e.pointerId;
+  const startX = e.clientX, startY = e.clientY;
+  const startedAt = performance.now();
+  let moved = false;
+
+  function onMove(ev){
+    if(ev.pointerId !== pointerId) return;
+    const dx = ev.clientX - startX, dy = ev.clientY - startY;
+    if(Math.abs(dx) > TOUCH_TAP_TOLERANCE_PX || Math.abs(dy) > TOUCH_TAP_TOLERANCE_PX){
+      moved = true; // 스크롤로 판단 — 이후 pointerup에서 아무 동작도 하지 않는다
+      cleanup();
+    }
+  }
+  function onUp(ev){
+    if(ev.pointerId !== pointerId) return;
+    cleanup();
+    if(moved) return; // 스크롤 제스처였음 — 무시
+    const heldMs = performance.now() - startedAt;
+    const hasNote = findNoteStart(lane, step) !== -1;
+    if(hasNote && heldMs >= TOUCH_LONG_PRESS_MS){
+      // 롱프레스: 지우기
+      paintCell(lane, step, false, 'normal');
+    }else if(hasNote){
+      // 짧은 탭 + 이미 있는 음: 선택 (아래 이동 버튼으로 옮길 수 있음)
+      const s = findNoteStart(lane, step);
+      selectedCells.clear();
+      selectedCells.add(cellKey(lane, s));
+      lastSelectionAnchor = { lane, step: s };
+      refreshGrid();
+    }else{
+      // 짧은 탭 + 빈 칸: 칠하기
+      if(selectedCells.size > 0){ selectedCells.clear(); refreshGrid(); }
+      paintCell(lane, step, true, resolveNoteType(false, lane));
+    }
+  }
+  function cleanup(){
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    window.removeEventListener('pointercancel', onCancel);
+  }
+  function onCancel(ev){
+    if(ev.pointerId !== pointerId) return;
+    cleanup();
+  }
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp);
+  window.addEventListener('pointercancel', onCancel);
+}
+
 // anchor 노트와 target 노트가 이루는 사각 범위(레인×타이밍) 안에 있는 노트를 전부 선택한다
 function selectRange(anchor, target){
   const stepMin = Math.min(anchor.step, target.step), stepMax = Math.max(anchor.step, target.step);
@@ -1123,6 +1221,11 @@ function selectRange(anchor, target){
 }
 
 // 선택된 노트들을 (deltaLane, deltaStep)만큼 한 번에 옮긴다. 하나라도 그리드 밖으로 나가면 이동을 취소.
+// 선택된 음을 방향 버튼으로 한 칸씩 옮긴다 (터치에서 드래그 이동 대신 사용하기 좋음; 데스크톱에서도 사용 가능)
+function nudgeSelection(deltaLane, deltaStep){
+  if(selectedCells.size === 0){ showEditorToast('먼저 옮길 음을 선택해주세요.'); return; }
+  moveSelectedNotes(deltaLane, deltaStep);
+}
 function moveSelectedNotes(deltaLane, deltaStep){
   if(selectedCells.size === 0) return false;
   const entries = Array.from(selectedCells).map(key=>{
@@ -1192,6 +1295,10 @@ function deleteSelectedNotes(){
 function paintCell(lane, step, add, noteType){
   if(add){
     if(cells[lane][step] > 0) return; // 이미 찍혀 있으면 그대로 둔다 (드래그 중 소리가 반복되지 않게)
+    // 반음+2는 B·F#현에서만 의미가 있으므로, 어떤 경로로 들어오든 여기서 최종적으로 한 번 더 걸러준다
+    if(noteType && noteType.startsWith('semitone2') && !SEMITONE2_LANES.has(lane)){
+      noteType = noteType.replace('semitone2', 'semitone');
+    }
     pushHistory();
     const span = Math.min(currentDur, STEPS - step);
     for(let s=step; s<step+span; s++){ cells[lane][s] = 0; cellTypes[lane][s] = 'normal'; }
@@ -1226,11 +1333,13 @@ function refreshGrid(){
     // (칸의 시작 위치(grid-column-start)는 buildGrid()에서 이미 'step+1'로 고정해뒀기 때문에,
     //  다른 칸들이 켜지거나 꺼지는 것과 무관하게 이 칸의 위치는 절대 바뀌지 않는다.)
     cellEl.style.gridColumnEnd = 'span ' + Math.max(1, v);
-    const hasTremolo = type === 'tremolo' || type === 'semitone-tremolo' || type === 'step-tremolo';
+    const hasTremolo = type === 'tremolo' || type === 'semitone-tremolo' || type === 'semitone2-tremolo' || type === 'step-tremolo';
     const hasSemitone = type === 'semitone' || type === 'semitone-tremolo';
+    const hasSemitone2 = type === 'semitone2' || type === 'semitone2-tremolo';
     const hasStep = type === 'step' || type === 'step-tremolo';
     cellEl.classList.toggle('tremolo', isOn && hasTremolo);
     cellEl.classList.toggle('semitone', isOn && hasSemitone);
+    cellEl.classList.toggle('semitone2', isOn && hasSemitone2);
     cellEl.classList.toggle('step', isOn && hasStep);
     cellEl.classList.toggle('selected', isOn && selectedCells.has(cellKey(lane, step)));
     cellEl.textContent = (isOn && TYPE_MARK[type]) ? TYPE_MARK[type] : '';
@@ -1538,8 +1647,8 @@ function importSongIntoGrid(bpm, songArr){
     const [lane, beats, mark] = songArr[i];
     const gapSteps = Math.round(beats / STEP_BEAT);
     const durSteps = Math.max(1, Math.min(MAX_DUR, gapSteps || 1));
-    const type = mark === '///' ? 'tremolo' : mark === 'A' ? 'semitone' : mark === 'S' ? 'step'
-               : mark === 'A///' ? 'semitone-tremolo' : mark === 'S///' ? 'step-tremolo' : 'normal';
+    const type = mark === '///' ? 'tremolo' : mark === 'A' ? 'semitone' : mark === 'S2' ? 'semitone2' : mark === 'D' ? 'step'
+               : mark === 'A///' ? 'semitone-tremolo' : mark === 'S2///' ? 'semitone2-tremolo' : mark === 'D///' ? 'step-tremolo' : 'normal';
     if(step < STEPS && lane >= 0 && lane < 13){
       if(cells[lane][step] > 0) collisionCount++; // 같은 칸에 이미 음이 있으면(비정상 데이터) 뒤에 온 것으로 덮어씀 — 조용히 사라지지 않도록 집계
       const span = Math.min(durSteps, STEPS - step);
@@ -1792,7 +1901,8 @@ function testTick(now, totalMs){
 }
 
 function onTestLaneTap(laneIndex, laneEl, isTremoloTick){
-  const bend = aKeyDown ? 'semitone' : (sKeyDown ? 'step' : null);
+  let bend = aKeyDown ? 'semitone' : (sKeyDown ? 'semitone2' : (dKeyDown ? 'step' : null));
+  if(bend) bend = sanitizeBendForLane(laneIndex, bend);
   playNote(laneIndex, undefined, bend);
   laneEl.classList.add('flash');
   setTimeout(()=>laneEl.classList.remove('flash'), 120);
@@ -1811,8 +1921,13 @@ function onTestLaneTap(laneIndex, laneEl, isTremoloTick){
   const requiredTremolo = !!(best.mark && best.mark.includes('///'));
   if(requiredTremolo && !isTremoloTick) return;
 
-  // 반음 UP('A') / 한 키 UP('S') 표시가 있는데 그 조작 없이 눌렀으면 타이밍과 무관하게 MISS
-  const requiredBend = best.mark && best.mark[0]==='A' ? 'semitone' : (best.mark && best.mark[0]==='S' ? 'step' : null);
+  // 반음(A) / 반음+2(S2) / 한 키(D) 표시가 있는데 그 조작 없이 눌렀으면 타이밍과 무관하게 MISS
+  let requiredBend = null;
+  if(best.mark){
+    if(best.mark.startsWith('S2')) requiredBend = 'semitone2';
+    else if(best.mark.startsWith('A')) requiredBend = 'semitone';
+    else if(best.mark.startsWith('D')) requiredBend = 'step';
+  }
   let label;
   if(requiredBend && bend !== requiredBend){
     label = 'MISS';
