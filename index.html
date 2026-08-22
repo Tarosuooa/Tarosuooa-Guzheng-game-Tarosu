@@ -669,6 +669,16 @@ function saveTextOverride(el){
 }
 
 let textEditModeOn = false;
+// 텍스트/조작법 편집 중에 실수로 탭/창을 닫거나 다른 페이지로 이동하면, 저장 안 한 내용이 사라질 수 있으니
+// 브라우저가 확인 팝업을 띄우게 한다. (각 칸은 포커스를 벗어날 때 자동 저장되지만,
+// 지금 막 입력 중인 칸이나 조작법 창이 열려 있는 동안은 아직 저장 전일 수 있다)
+window.addEventListener('beforeunload', (e)=>{
+  const howtoModal = document.getElementById('howtoModal');
+  const howtoOpen = howtoModal && howtoModal.classList.contains('show') && isAdminUser;
+  if(!textEditModeOn && !howtoOpen) return;
+  e.preventDefault();
+  e.returnValue = '';
+});
 function toggleTextEditMode(){
   textEditModeOn = !textEditModeOn;
   document.querySelectorAll('[data-tkey]').forEach(el=>{
