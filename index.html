@@ -351,7 +351,7 @@ h1{
 </div>
 
 <h1 id="pageTitle">타로당 13현 고쟁 GAME</h1>
-<p class="sub">계이름 점이 오른쪽 세로선에 닿는 순간, 그 줄을 터치하세요.<br>반음 UP = 키보드 A + 클릭<br>한 키 UP = 키보드 S + 클릭<br>트레몰로 = 꾹 누르기</p>
+<p class="sub">계이름 점이 오른쪽 세로선에 닿는 순간, 그 줄을 터치하세요.<br>반음 UP = 키보드 A + 클릭<br>반음 UP+2(B·F#현 전용) = 키보드 S + 클릭<br>한 키 UP = 키보드 D + 클릭<br>트레몰로 = 꾹 누르기</p>
 
 <div class="hud">
   <div>점수 <b id="scoreEl">0</b></div>
@@ -767,6 +767,9 @@ async function playNote(laneIndex, volume, bend){
   if(bend === 'semitone'){
     freq = freq * Math.pow(2, 1/12); // 반음(semitone) 위로
     cacheKey = note + '#semi';
+  }else if(bend === 'semitone2'){
+    freq = freq * Math.pow(2, 2/12); // 반음 +2 (B·F#현 전용)
+    cacheKey = note + '#semi2';
   }else if(bend === 'step'){
     const nextNote = NOTES[laneIndex + 1];
     if(nextNote && NOTE_FREQ[nextNote]){ freq = NOTE_FREQ[nextNote]; cacheKey = nextNote; } // 한 키(다음 줄 음) 위로
@@ -787,19 +790,30 @@ async function playNote(laneIndex, volume, bend){
   }catch(e){ console.error(e); }
 }
 
-/* ---------- 반음/한 키 UP 키보드 조작: 'a'를 누른 채 현을 클릭하면 반음, 's'를 누른 채 클릭하면 한 키 위로 ---------- */
-let aKeyDown = false, sKeyDown = false;
+/* ---------- 반음/반음+2/한 키 키보드 조작 ----------
+   A=반음(+1), S=반음+2(B·F#현 전용), D=한 키(+1, 다음 줄 음)
+   반음+2는 오음계 특성상 B·F# 줄에서만 실제로 새로운 음이라, 그 줄에서만 허용된다. */
+const SEMITONE2_LANES = new Set([1,4,6,9,11]); // B3,F#4,B4,F#5,B5
+function resolveBendFallback(laneIndex){
+  if(aKeyDown) return 'semitone';
+  if(sKeyDown) return SEMITONE2_LANES.has(laneIndex) ? 'semitone2' : 'semitone'; // 허용 안 되는 줄이면 일반 반음으로 대체
+  if(dKeyDown) return 'step';
+  return null;
+}
+let aKeyDown = false, sKeyDown = false, dKeyDown = false;
 window.addEventListener('keydown', (e)=>{
   const k = e.key.toLowerCase();
   if(k==='a') aKeyDown = true;
   if(k==='s') sKeyDown = true;
+  if(k==='d') dKeyDown = true;
 });
 window.addEventListener('keyup', (e)=>{
   const k = e.key.toLowerCase();
   if(k==='a') aKeyDown = false;
   if(k==='s') sKeyDown = false;
+  if(k==='d') dKeyDown = false;
 });
-window.addEventListener('blur', ()=>{ aKeyDown=false; sKeyDown=false; });
+window.addEventListener('blur', ()=>{ aKeyDown=false; sKeyDown=false; dKeyDown=false; });
 
 /* ===================== 기본 곡 =====================
    서버(Firestore)에서 '아리랑'을 불러오기 전까지 잠깐 쓰이는 빈 값.
@@ -897,7 +911,14 @@ function startPointerGesture(e, laneIndex, laneEl){
     const traveled = currentX - startX;
     const startedAwayFromLine = !isNearJudgeLine(startX);
     if(startedAwayFromLine && Math.abs(traveled) >= SWIPE_THRESHOLD_PX){
-      bend = traveled > 0 ? 'step' : 'semitone'; // 오른쪽으로 다가옴=한 키, 왼쪽으로 다가옴=반음
+      if(traveled > 0){
+        bend = 'step'; // 오른쪽으로 다가옴=한 키
+      }else{
+        // 왼쪽에서 다가옴=반음. 판정선에서 2배 멀리(JUDGE_TOUCH_TOLERANCE_PX의 2배 이상)서 출발했고
+        // B·F# 줄이면 반음+2로 인정한다.
+        const farAway = Math.abs(startX - judgeLineX()) >= JUDGE_TOUCH_TOLERANCE_PX * 2;
+        bend = (farAway && SEMITONE2_LANES.has(laneIndex)) ? 'semitone2' : 'semitone';
+      }
     }
     cleanup();
     if(bend){
@@ -1035,14 +1056,15 @@ function spawnBurstEffect(x, y, color){
 }
 
 function onLaneTap(laneIndex, laneEl, isTremoloTick, forcedBend, coords){
-  // forcedBend가 주어지면(모바일 좌우 슬라이드) 그 값을 그대로 쓰고, 아니면 기존처럼 키보드 A/S 상태를 따른다
-  const bend = forcedBend !== undefined ? forcedBend : (aKeyDown ? 'semitone' : (sKeyDown ? 'step' : null));
+  // forcedBend가 주어지면(모바일 좌우 슬라이드) 그 값을 그대로 쓰고, 아니면 기존처럼 키보드 A/S/D 상태를 따른다
+  const bend = forcedBend !== undefined ? forcedBend : resolveBendFallback(laneIndex);
   playNote(laneIndex, masterVolume, bend);
   laneEl.classList.add('flash');
   setTimeout(()=>laneEl.classList.remove('flash'), 120);
-  // 반음(A)/한 키(S)가 적용된 클릭·터치 지점에 파란색/빨간색으로 가볍게 터지는 이펙트를 띄운다
+  // 반음(파랑)/반음+2(보라)/한 키(빨강)가 적용된 클릭·터치 지점에 가볍게 터지는 이펙트를 띄운다
   if(coords && bend){
-    spawnBurstEffect(coords.x, coords.y, bend === 'semitone' ? '#3d7fe0' : '#e0453f');
+    const burstColor = bend === 'semitone2' ? '#8a4fd1' : (bend === 'semitone' ? '#3d7fe0' : '#e0453f');
+    spawnBurstEffect(coords.x, coords.y, burstColor);
   }
   if(!running) return;
 
@@ -1061,8 +1083,13 @@ function onLaneTap(laneIndex, laneEl, isTremoloTick, forcedBend, coords){
   const requiredTremolo = !!(best.mark && best.mark.includes('///'));
   if(requiredTremolo && !isTremoloTick) return;
 
-  // 반음 UP('A') / 한 키 UP('S') 표시가 있는데 그 조작을 안 하고 눌렀으면 타이밍과 무관하게 MISS
-  const requiredBend = best.mark && best.mark[0] === 'A' ? 'semitone' : (best.mark && best.mark[0] === 'S' ? 'step' : null);
+  // 반음(A)/반음+2(S2)/한 키(D) 표시가 있는데 그 조작을 안 하고 눌렀으면 타이밍과 무관하게 MISS
+  let requiredBend = null;
+  if(best.mark){
+    if(best.mark.startsWith('S2')) requiredBend = 'semitone2';
+    else if(best.mark.startsWith('A')) requiredBend = 'semitone';
+    else if(best.mark.startsWith('D')) requiredBend = 'step';
+  }
   let label;
   if(requiredBend && bend !== requiredBend){
     label = 'MISS';
@@ -1503,17 +1530,9 @@ async function saveSongEditMeta(){
 // '곡 편집기에서 수정': 이 곡의 패턴 데이터를 편집기로 넘겨서, 코드 복사 없이 그리드에서 바로 고칠 수 있게 함
 // (편집기는 같은 브라우저의 새 탭으로 열리므로, 이 handoff 값만은 그대로 localStorage를 임시 통로로 사용한다)
 const EDIT_HANDOFF_KEY = 'tarodang_guzheng_edit_payload';
-// 편집기는 그리드가 넓고 정밀한 클릭/드래그가 필요해서 PC 환경 전용으로 안내한다.
-// (다른 곳에서 쓰는 모바일 가상 패드 기준과 동일하게 900px를 경계로 판단)
-function isMobileViewport(){
-  return window.matchMedia('(max-width:900px)').matches;
-}
-// 편집기로 이동하는 모든 버튼이 공통으로 거치는 진입점: 모바일이거나 비로그인이면 안내만 띄우고 막는다
+// 편집기로 이동하는 모든 버튼이 공통으로 거치는 진입점: 로그인 안 되어 있으면 안내만 띄우고 막는다
+// (예전엔 PC 환경 전용이었지만, 이제 모바일에서도 터치로 편집할 수 있게 되어 로그인 여부만 확인한다)
 function goToEditor(url){
-  if(isMobileViewport()){
-    alert('편집기는 PC 환경에서만 접속 가능합니다');
-    return;
-  }
   if(!fbAuth || !fbAuth.currentUser){
     alert('타로당(芋頭堂)에 로그인 중인 회원님들만 편집기에 접속이 가능합니다');
     return;
@@ -1525,10 +1544,6 @@ function openEditorDirect(){
 }
 function openSongInEditor(){
   if(!editingSongId) return;
-  if(isMobileViewport()){
-    alert('편집기는 PC 환경에서만 접속 가능합니다');
-    return;
-  }
   if(!fbAuth || !fbAuth.currentUser){
     alert('타로당(芋頭堂)에 로그인 중인 회원님들만 편집기에 접속이 가능합니다');
     return;
@@ -1663,7 +1678,8 @@ const HOWTO_STORE_KEY = 'tarodang_guzheng_howto_rows';
 const HOWTO_DEFAULTS = [
   { id:'howto1', name:'현 터치', gif:'', desc:'판정 기준 선(오른쪽 세로선)에 닿는 순간 그 줄을 터치하면 소리가 나며 판정이 떠요.' },
   { id:'howto2', name:'반음 UP (A)', gif:'', desc:'키보드 A를 누른 채 클릭하거나, 판정선 오른쪽 바깥에서 왼쪽(판정선 방향)으로 슬라이드하면 반음이 올라가요.' },
-  { id:'howto3', name:'한 키 UP (S)', gif:'', desc:'키보드 S를 누른 채 클릭하거나, 판정선 왼쪽 바깥에서 오른쪽(판정선 방향)으로 슬라이드하면 한 키가 올라가요.' },
+  { id:'howto2b', name:'반음 UP+2 (S)', gif:'', desc:'B·F#현에서만 가능해요. 키보드 S를 누른 채 클릭하거나, 판정선 오른쪽에서 2배 멀리(더 바깥)에서 왼쪽으로 슬라이드하면 반음이 2단계 올라가요.' },
+  { id:'howto3', name:'한 키 UP (D)', gif:'', desc:'키보드 D를 누른 채 클릭하거나, 판정선 왼쪽 바깥에서 오른쪽(판정선 방향)으로 슬라이드하면 한 키가 올라가요.' },
   { id:'howto4', name:'트레몰로', gif:'', desc:'줄을 꾹 누르고 있으면 빠르게 반복 연주돼요.' },
 ];
 function loadHowtoOverrides(){
@@ -1795,6 +1811,7 @@ document.getElementById('leaderboardModal').addEventListener('click', (e)=>{ if(
 <div class="mobile-pad">
   <div class="pad-btn" id="padA">A</div>
   <div class="pad-btn" id="padS">S</div>
+  <div class="pad-btn" id="padD">D</div>
 </div>
 
 </div><!-- /#rotateWrapper -->
@@ -1827,6 +1844,7 @@ function bindPadBtn(el, setDown){
 }
 bindPadBtn(document.getElementById('padA'), v=>{ aKeyDown = v; });
 bindPadBtn(document.getElementById('padS'), v=>{ sKeyDown = v; });
+bindPadBtn(document.getElementById('padD'), v=>{ dKeyDown = v; });
 </script>
 </body>
 </html>
