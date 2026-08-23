@@ -1953,11 +1953,20 @@ function startTestDragGlide(pointerId, startLane){
   testDragPointerId = pointerId;
   lastTestDragLane = startLane;
 }
-function testLaneIndexFromClientY(clientY){
+function testLaneIndexFromClientY(clientY, previousIdx){
   const stageRect = document.getElementById('testStage').getBoundingClientRect();
   const laneH = stageRect.height / 13;
-  const idx = Math.floor((clientY - stageRect.top) / laneH);
-  return Math.max(0, Math.min(12, idx));
+  const rawIdx = (clientY - stageRect.top) / laneH;
+  let idx = Math.max(0, Math.min(12, Math.floor(rawIdx)));
+  // 레인 경계 근처 미세한 떨림으로 옆 레인이 잘못 눌리지 않도록 히스테리시스를 둔다 (게임 화면과 동일)
+  if(previousIdx !== undefined && previousIdx !== null && previousIdx >= 0){
+    const prevCenter = previousIdx + 0.5;
+    const margin = 0.18;
+    if(idx !== previousIdx && Math.abs(rawIdx - prevCenter) < 0.5 + margin){
+      return previousIdx;
+    }
+  }
+  return idx;
 }
 function stepThroughTestLanes(fromLane, toLane){
   if(fromLane < 0){ onTestLaneTap(toLane, testLaneEls[toLane]); return; }
@@ -1969,7 +1978,7 @@ function stepThroughTestLanes(fromLane, toLane){
 }
 window.addEventListener('pointermove', (e)=>{
   if(testDragPointerId === null || e.pointerId !== testDragPointerId) return;
-  const idx = testLaneIndexFromClientY(e.clientY);
+  const idx = testLaneIndexFromClientY(e.clientY, lastTestDragLane);
   if(idx !== lastTestDragLane){
     stopTestTremolo();
     stepThroughTestLanes(lastTestDragLane, idx);
