@@ -253,15 +253,16 @@ textarea#exportBox{
   box-shadow:0 0 14px 2px rgba(220,181,106,0.7); z-index:6; pointer-events:none;
 }
 .test-note{
-  position:absolute; width:24px; height:24px; border-radius:50%;
-  background:radial-gradient(circle at 35% 30%, #ffe9b8, var(--gold) 65%, #8a6423 100%);
-  box-shadow:0 0 8px rgba(220,181,106,0.6); top:50%; transform:translate(-50%,-50%);
+  position:absolute; width:16px; height:16px; border-radius:50%;
+  background:#c9c5bd;
+  border:2px solid #8f8b83;
+  top:50%; transform:translate(-50%,-50%);
   z-index:4; pointer-events:none;
 }
-.test-note.teal{ background:radial-gradient(circle at 35% 30%, #b6ffe0, #127c77 65%, #0a4a47 100%); }
+.test-note.teal{ background:#c9c5bd; border-color:#8f8b83; } /* 게임 화면과 동일하게 회색으로 통일 */
 .test-note.mark{
-  background:transparent; box-shadow:none; border-radius:0; width:auto; height:auto;
-  padding:0 2px; font-size:14px; font-weight:800; letter-spacing:-1px; white-space:nowrap;
+  background:transparent; border:none; border-radius:0; width:auto; height:auto;
+  padding:0 2px; font-size:13px; font-weight:800; letter-spacing:-1px; white-space:nowrap;
   color:var(--gold-bright); text-shadow:0 0 6px rgba(220,181,106,0.5);
 }
 .test-note.mark.teal{ color:#5bd6c9; text-shadow:0 0 6px rgba(91,214,201,0.5); }
@@ -1848,7 +1849,7 @@ function startTestPlay(){
   // 그리드의 음을 실제 게임과 동일한 [lane, beats] 타이밍으로 변환
   const bpm = Number(document.getElementById('bpmInput').value) || 100;
   const stepMs = (60000 / bpm) * STEP_BEAT;
-  let t = 400;
+  let t = LEAD_MS; // 점이 화면 왼쪽 끝에서 시작해 판정선까지 온전히 이동할 시간을 확보 (게임 화면과 동일)
   testNotes = events.map((ev, i) => {
     const nextStep = (i < events.length-1) ? events[i+1].step : (ev.step + ev.durSteps);
     const gapSteps = nextStep - ev.step; // 0이면 다음 음과 동시에 울림 (같은 칸=세로로 겹치는 음)
@@ -1858,28 +1859,11 @@ function startTestPlay(){
   });
   const totalMs = t;
 
-  runTestCountdown(3, () => {
-    testCounting = false;
-    testRunning = true;
-    testStartTime = performance.now();
-    testRafId = requestAnimationFrame((now)=>testTick(now, totalMs));
-  });
-}
-
-function runTestCountdown(n, onDone){
-  const screen = document.getElementById('testCountdownScreen');
-  const numEl = document.getElementById('testCountdownNum');
-  screen.classList.add('show');
-  const step = () => {
-    if(n <= 0){ screen.classList.remove('show'); onDone(); return; }
-    numEl.textContent = n;
-    numEl.style.animation = 'none';
-    void numEl.offsetWidth;
-    numEl.style.animation = 'testCountPop .9s ease';
-    n--;
-    setTimeout(step, 1000);
-  };
-  step();
+  // 카운트다운 없이 바로 시작 (편집기에서는 빠르게 반복 확인하는 용도라 대기 없이 즉시 재생)
+  testCounting = false;
+  testRunning = true;
+  testStartTime = performance.now();
+  testRafId = requestAnimationFrame((now)=>testTick(now, totalMs));
 }
 
 function testTick(now, totalMs){
