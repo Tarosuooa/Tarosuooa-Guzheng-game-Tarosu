@@ -901,6 +901,17 @@ function judgeLineX(){
 function isNearJudgeLine(clientX){
   return Math.abs(clientX - judgeLineX()) <= JUDGE_TOUCH_TOLERANCE_PX;
 }
+// 반음+2를 위해 '판정선에서 충분히 멀리서' 출발했는지 판단한다.
+// 고정 픽셀값(예: 68px)을 쓰면 판정선 오른쪽 공간이 좁은 모바일 화면(판정선이 78% 지점이라 오른쪽은 화면의 22%뿐)에서
+// 시작 지점을 잡을 여유가 거의 없었다. 그래서 화면 폭과 무관하게, 판정선 오른쪽에 남은 공간 중
+// '가까움' 판정 구간을 뺀 나머지의 절반 지점을 기준으로 삼는다 (화면이 좁아도 항상 절반은 확보됨).
+function isFarSemitoneStart(startX){
+  const stageRect = stage.getBoundingClientRect();
+  const judgeX_ = judgeLineX();
+  const availableRightSpace = stageRect.right - judgeX_;
+  const farThreshold = judgeX_ + JUDGE_TOUCH_TOLERANCE_PX + Math.max(0, availableRightSpace - JUDGE_TOUCH_TOLERANCE_PX) * 0.5;
+  return startX >= farThreshold;
+}
 
 /* ---------- 마우스(PC)·터치(모바일) 공통 연주 제스처 ----------
    1) 판정 기준 선 근처를 누르는(또는 그 근처로 커서/손가락이 다가오는) 순간에만 소리/판정이 난다.
@@ -927,9 +938,9 @@ function startPointerGesture(e, laneIndex, laneEl){
       if(traveled > 0){
         bend = 'step'; // 오른쪽으로 다가옴=한 키
       }else{
-        // 왼쪽에서 다가옴=반음. 판정선에서 2배 멀리(JUDGE_TOUCH_TOLERANCE_PX의 2배 이상)서 출발했고
-        // B·F# 줄이면 반음+2로 인정한다.
-        const farAway = Math.abs(startX - judgeLineX()) >= JUDGE_TOUCH_TOLERANCE_PX * 2;
+        // 왼쪽에서 다가옴=반음. 판정선 오른쪽에 남은 공간의 절반보다 더 멀리서 출발했고
+        // B·F# 줄이면 반음+2로 인정한다 (화면 폭에 비례해서 판단하므로 좁은 모바일 화면에서도 항상 여유 공간이 확보됨).
+        const farAway = isFarSemitoneStart(startX);
         bend = (farAway && SEMITONE2_LANES.has(laneIndex)) ? 'semitone2' : 'semitone';
       }
     }
