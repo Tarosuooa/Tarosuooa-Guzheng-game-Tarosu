@@ -1993,6 +1993,14 @@ function testJudgeLineX(){
 function isNearTestJudgeLine(clientX){
   return Math.abs(clientX - testJudgeLineX()) <= JUDGE_TOUCH_TOLERANCE_PX;
 }
+// 게임 화면과 동일한 방식: 화면 폭에 비례해서 '충분히 멀리서 출발했는지' 판단 (모바일 좁은 화면 대응)
+function isFarTestSemitoneStart(startX){
+  const stageRect = document.getElementById('testStage').getBoundingClientRect();
+  const judgeX_ = testJudgeLineX();
+  const availableRightSpace = stageRect.right - judgeX_;
+  const farThreshold = judgeX_ + JUDGE_TOUCH_TOLERANCE_PX + Math.max(0, availableRightSpace - JUDGE_TOUCH_TOLERANCE_PX) * 0.5;
+  return startX >= farThreshold;
+}
 function startTestPointerGesture(e, laneIndex, laneEl){
   const pointerId = e.pointerId;
   const startX = e.clientX;
@@ -2010,7 +2018,7 @@ function startTestPointerGesture(e, laneIndex, laneEl){
       if(traveled > 0){
         bend = 'step';
       }else{
-        const farAway = Math.abs(startX - testJudgeLineX()) >= JUDGE_TOUCH_TOLERANCE_PX * 2;
+        const farAway = isFarTestSemitoneStart(startX);
         bend = (farAway && SEMITONE2_LANES.has(laneIndex)) ? 'semitone2' : 'semitone';
       }
     }
