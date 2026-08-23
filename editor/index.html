@@ -10,7 +10,7 @@
 <style>
 :root{
   --paper:#f1e9d8; --paper-dark:#e6dabf; --ink:#231d17; --ink-soft:#564a3d;
-  --wood:#7a3324; --wood-deep:#4b1f17; --gold:#b8903f; --gold-bright:#dcb56a; --jade:#3f5e52; --plum:#6b3f7a;
+  --wood:#7a3324; --wood-deep:#4b1f17; --gold:#b8903f; --gold-bright:#dcb56a; --jade:#3f5e52; --plum:#6b3f7a; --danger:#8c3b2e;
 }
 *{box-sizing:border-box;}
 body{
@@ -235,6 +235,10 @@ textarea#exportBox{
   border-bottom:1px solid rgba(220,181,106,0.12); cursor:pointer;
 }
 .test-lane:last-child{ border-bottom:none; }
+.test-lane-hit{
+  position:absolute; top:0; bottom:0; left:0; right:0; cursor:pointer;
+  z-index:5; touch-action:none;
+}
 .test-lane-string{
   position:absolute; left:0; right:0; top:50%; height:2px; transform:translateY(-50%);
   background:linear-gradient(90deg, rgba(220,181,106,0.15), rgba(220,181,106,0.55) 40%, rgba(220,181,106,0.55) 78%, rgba(220,181,106,0.15));
@@ -251,6 +255,22 @@ textarea#exportBox{
   position:absolute; top:0; bottom:0; left:78%; width:3px;
   background:linear-gradient(180deg, var(--gold-bright), var(--gold));
   box-shadow:0 0 14px 2px rgba(220,181,106,0.7); z-index:6; pointer-events:none;
+}
+.pause-overlay{
+  display:none; position:absolute; inset:0; z-index:60; background:rgba(35,29,23,0.72);
+  color:#fdf6e6; flex-direction:column; align-items:center; justify-content:center;
+}
+.pause-overlay.show{ display:flex; }
+
+/* 반음(파랑)/반음+2(보라)/한 키(빨강) 적용 시 클릭·터치 지점에 뜨는 터지는 이펙트 (게임 화면과 동일) */
+.tap-burst{
+  position:fixed; width:10px; height:10px; border-radius:50%;
+  pointer-events:none; z-index:500; transform:translate(-50%,-50%);
+  animation:tapBurstAnim 0.45s ease-out forwards;
+}
+@keyframes tapBurstAnim{
+  0%{ width:10px; height:10px; opacity:0.85; }
+  100%{ width:70px; height:70px; opacity:0; }
 }
 .test-note{
   position:absolute; width:16px; height:16px; border-radius:50%;
@@ -432,14 +452,19 @@ textarea#exportBox{
     <div>점수 <b id="testScore">0</b></div>
     <div>콤보 <b id="testCombo">0</b></div>
     <div id="testJudgment">&nbsp;</div>
-    <button class="btn small ghost" style="margin-left:auto;" onclick="closeTestPlay()">✕ 편집으로 돌아가기</button>
+    <button class="btn small ghost" id="testPauseBtn" style="margin-left:auto;" onclick="toggleTestPause()">⏸ 일시정지</button>
+    <button class="btn small ghost" onclick="closeTestPlay()">✕ 편집으로 돌아가기</button>
   </div>
   <div class="test-stage" id="testStage">
     <div class="judge-line"></div>
-    <div class="countdown-screen" id="testCountdownScreen"><div id="testCountdownNum">3</div></div>
+    <div class="pause-overlay" id="testPauseOverlay">
+      <div style="font-size:20px; font-weight:800;">일시정지</div>
+      <button class="btn" style="margin-top:14px;" onclick="toggleTestPause()">▶ 계속하기</button>
+    </div>
     <div class="test-end-screen" id="testEndScreen">
       <h2 id="testCompleteTitle">테스트 완료</h2>
       <p>점수 <b id="testFinalScore">0</b> · 최고 콤보 <b id="testFinalCombo">0</b></p>
+      <p id="testFinalGrade"></p>
       <div style="margin-top:14px; display:flex; gap:10px;">
         <button class="btn small" onclick="startTestPlay()">다시 테스트</button>
         <button class="btn small ghost" onclick="closeTestPlay()">편집으로 돌아가기</button>
@@ -909,6 +934,21 @@ window.addEventListener('blur', ()=>{ aKeyDown=false; sKeyDown=false; dKeyDown=f
    트레몰로는 독립적인 스위치라서 함께 켜서 'A///'처럼 적용할 수 있다.
    반음+2는 오음계 특성상 B·F#현에서만 실제로 새로운 음이라, 그 줄에서만 허용된다. */
 const SEMITONE2_LANES = new Set([1,4,6,9,11]); // B3,F#4,B4,F#5,B5
+// 테스트 플레이의 판정선 제스처(게임 화면과 동일한 상수)
+const JUDGE_LINE_PCT = 0.78; // .judge-line의 CSS left:78%와 반드시 맞춰야 함
+const JUDGE_TOUCH_TOLERANCE_PX = 34;
+const SWIPE_THRESHOLD_PX = 14;
+// 반음(파랑)/반음+2(보라)/한 키(빨강) 적용 지점에 가볍게 터지는 이펙트 (게임 화면과 동일)
+function spawnBurstEffect(x, y, color){
+  const el = document.createElement('div');
+  el.className = 'tap-burst';
+  el.style.left = x + 'px';
+  el.style.top = y + 'px';
+  el.style.background = color;
+  el.style.boxShadow = '0 0 16px 4px ' + color;
+  document.body.appendChild(el);
+  setTimeout(()=> el.remove(), 480);
+}
 let currentBend = 'none'; // 'none' | 'semitone' | 'semitone2' | 'step'
 let currentTremoloMode = false;
 function toggleBend(type, btn){
@@ -1808,14 +1848,18 @@ const MISS_GRACE = 260;
 
 let testNotes = [], testRunning = false, testCounting = false, testRafId = null, testStartTime = 0;
 let testScore = 0, testCombo = 0, testMaxCombo = 0;
+let testPerfectCount = 0, testGoodCount = 0, testJudgedCount = 0, testTotalNoteCount = 0;
+let testPaused = false, testPauseStartedAt = 0;
 
 function buildTestLanes(){
   const stage = document.getElementById('testStage');
   stage.querySelectorAll('.test-lane').forEach(el=>el.remove());
+  testLaneEls = [];
   for(let i=0;i<13;i++){
     const lane = document.createElement('div');
     lane.className = 'test-lane';
     lane.style.top = (i * (100/13)) + '%';
+    lane.dataset.lane = i;
     const line = document.createElement('div');
     line.className = 'test-lane-string' + (TEAL_LANES.has(i) ? ' teal' : '');
     lane.appendChild(line);
@@ -1823,25 +1867,129 @@ function buildTestLanes(){
     label.className = 'test-lane-label';
     label.textContent = NOTES[i];
     lane.appendChild(label);
-    lane.addEventListener('pointerdown', (e)=>{ e.preventDefault(); onTestLaneTap(i, lane); beginTestTremolo(i, lane); });
-    lane.addEventListener('pointerup', stopTestTremolo);
-    lane.addEventListener('pointerleave', stopTestTremolo);
-    lane.addEventListener('pointercancel', stopTestTremolo);
+    const hitZone = document.createElement('div');
+    hitZone.className = 'test-lane-hit';
+    hitZone.addEventListener('pointerdown', (e)=>{
+      e.preventDefault();
+      startTestPointerGesture(e, i, lane); // 게임 화면과 동일한 판정선-슬라이드 제스처
+    });
+    hitZone.addEventListener('pointerup', stopTestTremolo);
+    hitZone.addEventListener('pointerleave', stopTestTremolo);
+    hitZone.addEventListener('pointercancel', stopTestTremolo);
+    lane.appendChild(hitZone);
     stage.insertBefore(lane, stage.firstChild);
+    testLaneEls[i] = lane;
   }
 }
+let testLaneEls = [];
+
+/* ---------- 테스트 플레이 전용: 게임 화면과 동일한 판정선 제스처(판정선 근처에서만 반응 + 슬라이드로 반음/한 키) ---------- */
+function testJudgeLineX(){
+  const stageRect = document.getElementById('testStage').getBoundingClientRect();
+  return stageRect.left + stageRect.width * JUDGE_LINE_PCT;
+}
+function isNearTestJudgeLine(clientX){
+  return Math.abs(clientX - testJudgeLineX()) <= JUDGE_TOUCH_TOLERANCE_PX;
+}
+function startTestPointerGesture(e, laneIndex, laneEl){
+  const pointerId = e.pointerId;
+  const startX = e.clientX;
+  let currentY = e.clientY;
+  let triggered = false;
+
+  function attemptTrigger(currentX){
+    if(triggered) return;
+    if(!isNearTestJudgeLine(currentX)) return;
+    triggered = true;
+    let bend;
+    const traveled = currentX - startX;
+    const startedAwayFromLine = !isNearTestJudgeLine(startX);
+    if(startedAwayFromLine && Math.abs(traveled) >= SWIPE_THRESHOLD_PX){
+      if(traveled > 0){
+        bend = 'step';
+      }else{
+        const farAway = Math.abs(startX - testJudgeLineX()) >= JUDGE_TOUCH_TOLERANCE_PX * 2;
+        bend = (farAway && SEMITONE2_LANES.has(laneIndex)) ? 'semitone2' : 'semitone';
+      }
+    }
+    cleanup();
+    if(bend){
+      onTestLaneTap(laneIndex, laneEl, false, bend, {x:currentX, y:currentY});
+    }else{
+      onTestLaneTap(laneIndex, laneEl, false, undefined, {x:currentX, y:currentY});
+      beginTestTremolo(laneIndex, laneEl);
+    }
+    startTestDragGlide(pointerId, laneIndex);
+  }
+  function onMove(ev){
+    if(ev.pointerId !== pointerId) return;
+    currentY = ev.clientY;
+    attemptTrigger(ev.clientX);
+  }
+  function onUp(ev){
+    if(ev.pointerId !== pointerId) return;
+    cleanup();
+  }
+  function cleanup(){
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    window.removeEventListener('pointercancel', onUp);
+  }
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp);
+  window.addEventListener('pointercancel', onUp);
+  attemptTrigger(startX);
+}
+
+/* ---------- 테스트 플레이 전용: 손가락(마우스)을 누른 채 위/아래로 훑으면 지나간 줄이 순서대로 재생 ---------- */
+let testDragPointerId = null;
+let lastTestDragLane = -1;
+function startTestDragGlide(pointerId, startLane){
+  testDragPointerId = pointerId;
+  lastTestDragLane = startLane;
+}
+function testLaneIndexFromClientY(clientY){
+  const stageRect = document.getElementById('testStage').getBoundingClientRect();
+  const laneH = stageRect.height / 13;
+  const idx = Math.floor((clientY - stageRect.top) / laneH);
+  return Math.max(0, Math.min(12, idx));
+}
+function stepThroughTestLanes(fromLane, toLane){
+  if(fromLane < 0){ onTestLaneTap(toLane, testLaneEls[toLane]); return; }
+  const dir = toLane > fromLane ? 1 : -1;
+  for(let i = fromLane + dir; ; i += dir){
+    onTestLaneTap(i, testLaneEls[i]);
+    if(i === toLane) break;
+  }
+}
+window.addEventListener('pointermove', (e)=>{
+  if(testDragPointerId === null || e.pointerId !== testDragPointerId) return;
+  const idx = testLaneIndexFromClientY(e.clientY);
+  if(idx !== lastTestDragLane){
+    stopTestTremolo();
+    stepThroughTestLanes(lastTestDragLane, idx);
+    lastTestDragLane = idx;
+  }
+});
+window.addEventListener('pointerup', (e)=>{ if(e.pointerId === testDragPointerId){ testDragPointerId = null; lastTestDragLane = -1; } });
+window.addEventListener('pointercancel', (e)=>{ if(e.pointerId === testDragPointerId){ testDragPointerId = null; lastTestDragLane = -1; } });
 
 function startTestPlay(){
   const events = buildOrderedSong();
   if(events.length === 0){ alert('아직 찍은 음이 없어요. 그리드에서 곡을 먼저 만들어주세요.'); return; }
   if(testRunning || testCounting) return;
   testCounting = true;
+  testPaused = false;
+  document.getElementById('testPauseOverlay').classList.remove('show');
+  const pauseBtn = document.getElementById('testPauseBtn');
+  if(pauseBtn) pauseBtn.textContent = '⏸ 일시정지';
   document.getElementById('testOverlay').classList.add('show');
   document.getElementById('testEndScreen').classList.remove('show');
   document.getElementById('testStage').querySelectorAll('.test-note, .test-hit-pop').forEach(el=>el.remove());
   buildTestLanes();
 
   testScore = 0; testCombo = 0; testMaxCombo = 0;
+  testPerfectCount = 0; testGoodCount = 0; testJudgedCount = 0;
   document.getElementById('testScore').textContent = '0';
   document.getElementById('testCombo').textContent = '0';
   document.getElementById('testJudgment').textContent = '\u00a0';
@@ -1857,6 +2005,7 @@ function startTestPlay(){
     t += gapSteps * stepMs;
     return note;
   });
+  testTotalNoteCount = testNotes.length;
   const totalMs = t;
 
   // 카운트다운 없이 바로 시작 (편집기에서는 빠르게 반복 확인하는 용도라 대기 없이 즉시 재생)
@@ -1866,7 +2015,30 @@ function startTestPlay(){
   testRafId = requestAnimationFrame((now)=>testTick(now, totalMs));
 }
 
+// 게임 화면과 동일한 일시정지 동작: 멈춰있던 시간만큼 밀어서 진행 시간이 이어지게 함
+function toggleTestPause(){
+  if(!testRunning) return;
+  if(!testPaused){
+    testPaused = true;
+    testPauseStartedAt = performance.now();
+    if(testRafId) cancelAnimationFrame(testRafId);
+    document.getElementById('testPauseOverlay').classList.add('show');
+    const btn = document.getElementById('testPauseBtn');
+    if(btn) btn.textContent = '▶ 계속하기';
+  }else{
+    testPaused = false;
+    testStartTime += performance.now() - testPauseStartedAt;
+    document.getElementById('testPauseOverlay').classList.remove('show');
+    const btn = document.getElementById('testPauseBtn');
+    if(btn) btn.textContent = '⏸ 일시정지';
+    testRafId = requestAnimationFrame((now)=>testTick(now, testTotalMsCache));
+  }
+}
+let testTotalMsCache = 0;
+
 function testTick(now, totalMs){
+  testTotalMsCache = totalMs; // 일시정지 후 재개할 때 다시 필요하므로 기억해둔다
+  if(testPaused) return;
   if(!testRunning) return;
   const elapsed = now - testStartTime;
   const stage = document.getElementById('testStage');
@@ -1900,13 +2072,18 @@ function testTick(now, totalMs){
   testRafId = requestAnimationFrame((n2)=>testTick(n2, totalMs));
 }
 
-function onTestLaneTap(laneIndex, laneEl, isTremoloTick){
-  let bend = aKeyDown ? 'semitone' : (sKeyDown ? 'semitone2' : (dKeyDown ? 'step' : null));
+function onTestLaneTap(laneIndex, laneEl, isTremoloTick, forcedBend, coords){
+  let bend = forcedBend !== undefined ? forcedBend : (aKeyDown ? 'semitone' : (sKeyDown ? 'semitone2' : (dKeyDown ? 'step' : null)));
   if(bend) bend = sanitizeBendForLane(laneIndex, bend);
   playNote(laneIndex, undefined, bend);
   laneEl.classList.add('flash');
   setTimeout(()=>laneEl.classList.remove('flash'), 120);
-  if(!testRunning) return;
+  // 반음(파랑)/반음+2(보라)/한 키(빨강) 적용 지점에 이펙트 (게임 화면과 동일)
+  if(coords && bend){
+    const burstColor = bend === 'semitone2' ? '#8a4fd1' : (bend === 'semitone' ? '#3d7fe0' : '#e0453f');
+    spawnBurstEffect(coords.x, coords.y, burstColor);
+  }
+  if(!testRunning || testPaused) return;
 
   const now = performance.now() - testStartTime;
   let best=null, bestDiff=Infinity;
@@ -1955,13 +2132,14 @@ window.addEventListener('pointerup', stopTestTremolo);
 window.addEventListener('blur', stopTestTremolo);
 
 function testJudge(label, laneIndex){
-  if(label==='PERFECT'){ testScore+=100; testCombo++; }
-  else if(label==='GOOD'){ testScore+=60; testCombo++; }
+  testJudgedCount++;
+  if(label==='PERFECT'){ testScore+=100; testCombo++; testPerfectCount++; }
+  else if(label==='GOOD'){ testScore+=60; testCombo++; testGoodCount++; }
   else{ testCombo=0; }
   testMaxCombo = Math.max(testMaxCombo, testCombo);
   const judgmentEl = document.getElementById('testJudgment');
   judgmentEl.textContent = label + (testCombo>1 ? ' · ' + testCombo + '콤보' : '');
-  judgmentEl.style.color = label==='MISS' ? '#e07a6b' : (label==='PERFECT' ? 'var(--gold-bright)' : '#7fd9c4');
+  judgmentEl.style.color = label==='MISS' ? 'var(--danger)' : (label==='PERFECT' ? 'var(--gold-bright)' : 'var(--jade)');
   document.getElementById('testScore').textContent = testScore;
   document.getElementById('testCombo').textContent = testCombo;
 
@@ -1970,7 +2148,7 @@ function testJudge(label, laneIndex){
   const pop = document.createElement('div');
   pop.className = 'test-hit-pop';
   pop.style.top = (laneH*laneIndex + laneH/2) + 'px';
-  pop.style.color = label==='MISS' ? '#e07a6b' : (label==='PERFECT' ? 'var(--gold-bright)' : '#7fd9c4');
+  pop.style.color = label==='MISS' ? 'var(--danger)' : (label==='PERFECT' ? 'var(--gold-bright)' : 'var(--jade)');
   pop.textContent = label;
   stage.appendChild(pop);
   setTimeout(()=>pop.remove(), 500);
@@ -1978,16 +2156,27 @@ function testJudge(label, laneIndex){
 
 function endTestPlay(){
   testRunning = false;
+  testPaused = false;
   if(testRafId) cancelAnimationFrame(testRafId);
   document.getElementById('testFinalScore').textContent = testScore;
   document.getElementById('testFinalCombo').textContent = testMaxCombo;
+  // 게임 화면과 동일한 등급 계산 (PERFECT/GOOD 판정 노트 비율 기준)
+  const total = testTotalNoteCount;
+  const successCount = testPerfectCount + testGoodCount;
+  const successRate = total > 0 ? (successCount / total) * 100 : 0;
+  const grade = successRate >= 90 ? 'PERFECT' :
+                successRate >= 60 ? 'GOOD' :
+                successRate >= 30 ? 'NORMAL' : 'WUWUWU';
+  const gradeEl = document.getElementById('testFinalGrade');
+  if(gradeEl) gradeEl.textContent = '최고 콤보 ' + testMaxCombo + ' · ' + grade + ' (' + successRate.toFixed(0) + '%)';
   document.getElementById('testEndScreen').classList.add('show');
 }
 
 function closeTestPlay(){
-  testRunning = false; testCounting = false;
+  testRunning = false; testCounting = false; testPaused = false;
   if(testRafId) cancelAnimationFrame(testRafId);
   stopTestTremolo();
+  document.getElementById('testPauseOverlay').classList.remove('show');
   document.getElementById('testOverlay').classList.remove('show');
   document.getElementById('testStage').querySelectorAll('.test-note, .test-hit-pop').forEach(el=>el.remove());
 }
