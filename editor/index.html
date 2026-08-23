@@ -303,6 +303,10 @@ textarea#exportBox{
   font-family:'Nanum Myeongjo',serif; font-size:88px; font-weight:800; color:var(--gold-bright);
   text-shadow:0 0 24px rgba(220,181,106,0.8); animation:testCountPop .9s ease;
 }
+#testCountdownText{
+  font-family:'Nanum Myeongjo',serif; font-size:24px; font-weight:800; color:var(--gold-bright);
+  text-shadow:0 0 24px rgba(220,181,106,0.8); text-align:center; padding:0 20px;
+}
 @keyframes testCountPop{
   0%{ opacity:0; transform:scale(0.4); }
   30%{ opacity:1; transform:scale(1.15); }
@@ -457,6 +461,7 @@ textarea#exportBox{
   </div>
   <div class="test-stage" id="testStage">
     <div class="judge-line"></div>
+    <div class="countdown-screen" id="testCountdownScreen"><div id="testCountdownText">곧 테스트 플레이가 시작됩니다</div></div>
     <div class="pause-overlay" id="testPauseOverlay">
       <div style="font-size:20px; font-weight:800;">일시정지</div>
       <button class="btn" style="margin-top:14px;" onclick="toggleTestPause()">▶ 계속하기</button>
@@ -2008,11 +2013,22 @@ function startTestPlay(){
   testTotalNoteCount = testNotes.length;
   const totalMs = t;
 
-  // 카운트다운 없이 바로 시작 (편집기에서는 빠르게 반복 확인하는 용도라 대기 없이 즉시 재생)
-  testCounting = false;
-  testRunning = true;
-  testStartTime = performance.now();
-  testRafId = requestAnimationFrame((now)=>testTick(now, totalMs));
+  // 3초 숫자 카운트다운 대신, 1.5초 동안 안내 문구만 보여주고 바로 시작한다
+  runTestCountdown(() => {
+    testCounting = false;
+    testRunning = true;
+    testStartTime = performance.now();
+    testRafId = requestAnimationFrame((now)=>testTick(now, totalMs));
+  });
+}
+
+function runTestCountdown(onDone){
+  const screen = document.getElementById('testCountdownScreen');
+  screen.classList.add('show');
+  setTimeout(()=>{
+    screen.classList.remove('show');
+    onDone();
+  }, 1500);
 }
 
 // 게임 화면과 동일한 일시정지 동작: 멈춰있던 시간만큼 밀어서 진행 시간이 이어지게 함
@@ -2177,6 +2193,7 @@ function closeTestPlay(){
   if(testRafId) cancelAnimationFrame(testRafId);
   stopTestTremolo();
   document.getElementById('testPauseOverlay').classList.remove('show');
+  document.getElementById('testCountdownScreen').classList.remove('show');
   document.getElementById('testOverlay').classList.remove('show');
   document.getElementById('testStage').querySelectorAll('.test-note, .test-hit-pop').forEach(el=>el.remove());
 }
