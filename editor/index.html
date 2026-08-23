@@ -960,10 +960,12 @@ function toggleBend(type, btn){
   currentBend = (currentBend === type) ? 'none' : type;
   document.querySelectorAll('.note-btn[data-bend]').forEach(b=>b.classList.remove('active'));
   if(currentBend !== 'none') btn.classList.add('active');
+  applyBendToSelection(currentBend); // 이미 선택된 블록이 있으면 그 블록들의 반음 표시도 함께 바꾼다
 }
 function toggleTremoloMode(btn){
   currentTremoloMode = !currentTremoloMode;
   btn.classList.toggle('active', currentTremoloMode);
+  applyTremoloToSelection(); // 이미 선택된 블록이 있으면 그 블록들의 트레몰로도 함께 토글한다
 }
 function composeNoteType(bend, tremolo){
   if(bend !== 'none' && tremolo) return bend + '-tremolo';
@@ -1043,6 +1045,66 @@ function setDuration(d, btn){
   currentDur = d;
   document.querySelectorAll('.dur-btn').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
+  applyDurationToSelection(d); // 이미 선택된 블록이 있으면 그 블록들의 길이도 함께 바꾼다
+}
+/* ---------- 이미 찍혀 있는 선택된 블록들에게 음 길이/반음/트레몰로를 일괄 적용 ----------
+   개수와 상관없이, 지금 선택되어 있는 블록이 있으면 편집 도구 버튼이나 단축키를 눌렀을 때
+   '앞으로 찍을 노트의 기본값'만 바뀌는 게 아니라 선택된 블록들 자체가 바로 그렇게 수정된다. */
+function applyDurationToSelection(newDur){
+  if(selectedCells.size === 0) return false;
+  pushHistory();
+  let changed = false;
+  selectedCells.forEach(key=>{
+    const [lane, step] = key.split(',').map(Number);
+    const oldSpan = cells[lane][step];
+    if(oldSpan <= 0) return; // 이미 지워졌거나 가려진 칸이면 건너뜀 (선택 키는 항상 시작 칸 기준)
+    const origType = cellTypes[lane][step];
+    // 같은 레인에서 이 노트 바로 다음에 오는 '선택되지 않은' 다른 노트를 침범하지 않도록 제한한다
+    let nextStart = STEPS;
+    for(let s = step + 1; s < STEPS; s++){
+      if(cells[lane][s] > 0 && !selectedCells.has(cellKey(lane, s))){ nextStart = s; break; }
+    }
+    const finalSpan = Math.max(1, Math.min(newDur, nextStart - step, STEPS - step));
+    for(let s = step; s < step + oldSpan; s++){ cells[lane][s] = 0; cellTypes[lane][s] = 'normal'; }
+    cells[lane][step] = finalSpan;
+    cellTypes[lane][step] = origType;
+    changed = true;
+  });
+  if(changed) refreshGrid();
+  return changed;
+}
+function applyBendToSelection(bendType){
+  if(selectedCells.size === 0) return false;
+  pushHistory();
+  selectedCells.forEach(key=>{
+    const [lane, step] = key.split(',').map(Number);
+    if(cells[lane][step] <= 0) return;
+    const hasTremolo = cellTypes[lane][step].includes('tremolo');
+    const safeBend = bendType === 'none' ? 'none' : sanitizeBendForLane(lane, bendType);
+    cellTypes[lane][step] = composeNoteType(safeBend, hasTremolo);
+  });
+  refreshGrid();
+  return true;
+}
+function applyTremoloToSelection(){
+  if(selectedCells.size === 0) return false;
+  pushHistory();
+  // 선택된 블록 중 하나라도 트레몰로가 없으면 전체 ON으로, 이미 전부 있으면 전체 OFF로 (토글처럼 동작)
+  let anyWithoutTremolo = false;
+  selectedCells.forEach(key=>{
+    const [lane, step] = key.split(',').map(Number);
+    if(cells[lane][step] > 0 && !cellTypes[lane][step].includes('tremolo')) anyWithoutTremolo = true;
+  });
+  selectedCells.forEach(key=>{
+    const [lane, step] = key.split(',').map(Number);
+    if(cells[lane][step] <= 0) return;
+    const curType = cellTypes[lane][step];
+    const bendPart = curType.replace('-tremolo','').replace('tremolo','none');
+    const bend = bendPart === 'normal' ? 'none' : bendPart;
+    cellTypes[lane][step] = composeNoteType(bend, anyWithoutTremolo);
+  });
+  refreshGrid();
+  return true;
 }
 // 편집 도구 모음 접기/펼치기 (선택 상태는 기억해뒀다가 다음에 열 때도 유지)
 const EDIT_TOOLBAR_COLLAPSE_KEY = 'tarodang_guzheng_edit_toolbar_collapsed';
@@ -1491,7 +1553,8 @@ function startPlaybackFrom(startStep){
   playState = {
     events, startStep, stepMs,
     totalMs: (totalSteps - startStep) * stepMs,
-    elapsedMs: 0, paused: false, lastFrameTime: performance.now(), rafId: null
+    elapsedMs: 0, paused: false, lastFrameTime: performance.now(), rafId: null,
+    tremoloTimeouts: [] // 트레몰로 노트의 반복 재생 예약(setTimeout id)들 — 일시정지/정지 시 전부 취소해야 함
   };
   const playhead = document.getElementById('playhead');
   if(playhead) playhead.style.display = 'block';
@@ -1508,7 +1571,19 @@ function playbackFrame(now){
       const dueMs = (ev.step - playState.startStep) * playState.stepMs;
       if(playState.elapsedMs >= dueMs){
         ev.playedAt = playState.elapsedMs;
-        playNote(ev.lane, undefined, TYPE_BEND[ev.type]);
+        const bend = TYPE_BEND[ev.type];
+        const hasTremolo = ev.type === 'tremolo' || ev.type === 'semitone-tremolo' || ev.type === 'semitone2-tremolo' || ev.type === 'step-tremolo';
+        if(hasTremolo){
+          // ///(트레몰로) 노트는 한 번만 울리지 않고, 실제 게임처럼 55ms 간격으로 음 길이만큼 빠르게 반복 재생한다
+          const durationMs = ev.durSteps * playState.stepMs;
+          const tickCount = Math.max(1, Math.round(durationMs / 55));
+          for(let i=0; i<tickCount; i++){
+            const tid = setTimeout(()=> playNote(ev.lane, undefined, bend), i * 55);
+            playState.tremoloTimeouts.push(tid);
+          }
+        }else{
+          playNote(ev.lane, undefined, bend);
+        }
       }
     }
   });
@@ -1521,6 +1596,8 @@ function pausePlayback(){
   if(!playState || playState.paused) return;
   playState.paused = true;
   if(playState.rafId) cancelAnimationFrame(playState.rafId);
+  playState.tremoloTimeouts.forEach(tid => clearTimeout(tid)); // 예약된 트레몰로 반복 재생도 함께 멈춘다
+  playState.tremoloTimeouts = [];
   updatePlayBtnUI();
 }
 function resumePlayback(){
@@ -1531,7 +1608,10 @@ function resumePlayback(){
   updatePlayBtnUI();
 }
 function stopPlayback(){
-  if(playState && playState.rafId) cancelAnimationFrame(playState.rafId);
+  if(playState){
+    if(playState.rafId) cancelAnimationFrame(playState.rafId);
+    if(playState.tremoloTimeouts) playState.tremoloTimeouts.forEach(tid => clearTimeout(tid));
+  }
   playState = null;
   const playhead = document.getElementById('playhead');
   if(playhead) playhead.style.display = 'none';
