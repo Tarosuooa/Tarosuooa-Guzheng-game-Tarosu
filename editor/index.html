@@ -1617,15 +1617,29 @@ function stopPlayback(){
   if(playhead) playhead.style.display = 'none';
   updatePlayBtnUI();
 }
+/* 사용자가 재생 중에 직접 좌우로 스크롤하면, 잠시 동안 재생 위치 자동 추적을 멈춰서
+   화면 이동이 방해받지 않게 한다 (재생 자체의 위치/상태는 전혀 건드리지 않음). */
+let suppressAutoScrollUntil = 0;
+let isProgrammaticScroll = false;
+(function setupManualScrollDetection(){
+  const gridWrap = document.querySelector('.grid-wrap');
+  if(!gridWrap) return;
+  gridWrap.addEventListener('scroll', ()=>{
+    if(isProgrammaticScroll){ isProgrammaticScroll = false; return; } // 우리가 자동으로 스크롤한 것이면 무시
+    suppressAutoScrollUntil = Date.now() + 3000; // 사용자가 직접 스크롤한 뒤 3초간은 자동 추적을 쉰다
+  });
+})();
+
 function updatePlayheadX(stepPos){
   const playhead = document.getElementById('playhead');
   const gridWrap = document.querySelector('.grid-wrap');
   if(!playhead) return;
   const x = stepToX(stepPos);
   playhead.style.left = x + 'px';
-  if(gridWrap){
+  if(gridWrap && Date.now() >= suppressAutoScrollUntil){
     const visibleLeft = gridWrap.scrollLeft, visibleRight = visibleLeft + gridWrap.clientWidth;
     if(x < visibleLeft + 20 || x > visibleRight - 40){
+      isProgrammaticScroll = true;
       gridWrap.scrollLeft = Math.max(0, x - gridWrap.clientWidth * 0.3);
     }
   }
@@ -1956,6 +1970,9 @@ function buildTestLanes(){
     hitZone.className = 'test-lane-hit';
     hitZone.addEventListener('pointerdown', (e)=>{
       e.preventDefault();
+      // 손가락(마우스)이 살짝 옆으로 벗어난 채 손을 떼면 pointerup이 엉뚱한 요소로 전달될 수 있어서,
+      // 이 포인터의 이후 이벤트가 항상 이 레인으로 확실히 전달되도록 붙잡아둔다.
+      try{ hitZone.setPointerCapture(e.pointerId); }catch(err){}
       startTestPointerGesture(e, i, lane); // 게임 화면과 동일한 판정선-슬라이드 제스처
     });
     hitZone.addEventListener('pointerup', stopTestTremolo);
