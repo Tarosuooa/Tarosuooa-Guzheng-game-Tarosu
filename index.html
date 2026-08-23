@@ -968,11 +968,21 @@ function startDragGlide(pointerId, startLane){
   dragPointerId = pointerId;
   lastDragLane = startLane;
 }
-function laneIndexFromClientY(clientY){
+function laneIndexFromClientY(clientY, previousIdx){
   const stageRect = stage.getBoundingClientRect();
   const laneH = stageRect.height / 13;
-  const idx = Math.floor((clientY - stageRect.top) / laneH);
-  return Math.max(0, Math.min(12, idx));
+  const rawIdx = (clientY - stageRect.top) / laneH;
+  let idx = Math.max(0, Math.min(12, Math.floor(rawIdx)));
+  // 레인 경계 바로 위에서 손(마우스)이 아주 살짝만 떨려도 옆 레인으로 잘못 넘어가 소리가 하나 더 나던 문제가 있었다.
+  // 그래서 이전 레인의 정중앙에서 일정 여유(히스테리시스)만큼은 벗어나야만 실제로 레인이 바뀐 것으로 인정한다.
+  if(previousIdx !== undefined && previousIdx !== null && previousIdx >= 0){
+    const prevCenter = previousIdx + 0.5;
+    const margin = 0.18; // 레인 높이의 18%만큼 여유
+    if(idx !== previousIdx && Math.abs(rawIdx - prevCenter) < 0.5 + margin){
+      return previousIdx; // 아직 여유 범위 안이면 레인을 바꾸지 않음
+    }
+  }
+  return idx;
 }
 function stepThroughLanes(fromLane, toLane){
   if(fromLane < 0){ onLaneTap(toLane, laneEls[toLane]); return; }
@@ -984,7 +994,7 @@ function stepThroughLanes(fromLane, toLane){
 }
 window.addEventListener('pointermove', (e)=>{
   if(dragPointerId === null || e.pointerId !== dragPointerId) return;
-  const idx = laneIndexFromClientY(e.clientY);
+  const idx = laneIndexFromClientY(e.clientY, lastDragLane);
   if(idx !== lastDragLane){
     stopTremolo(); // 훑는 중에는 한 줄에 멈춰 트레몰로가 걸리지 않도록 초기화
     stepThroughLanes(lastDragLane, idx);
