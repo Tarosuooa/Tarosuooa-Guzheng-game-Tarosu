@@ -185,14 +185,18 @@ h1{
 .pause-overlay.show{ display:flex; }
 
 /* ---------- 모바일: 자동 가로 모드 + 반투명 가상 패드(A/S) ---------- */
-.mobile-pad{ display:none; position:fixed; left:14px; bottom:14px; z-index:80; gap:12px; }
+.mobile-pad{ display:none; position:fixed; left:14px; bottom:14px; z-index:80; gap:14px; }
 .pad-btn{
-  width:56px; height:56px; border-radius:50%; border:2px solid rgba(255,255,255,0.55);
-  background:rgba(35,29,23,0.35); color:#fff; font-size:19px; font-weight:800;
+  width:72px; height:72px; border-radius:50%; border:2px solid rgba(255,255,255,0.55);
+  background:rgba(35,29,23,0.35); color:#fff; font-size:24px; font-weight:800;
   display:flex; align-items:center; justify-content:center; user-select:none; touch-action:none;
-  -webkit-tap-highlight-color:transparent;
+  -webkit-tap-highlight-color:transparent; -webkit-touch-callout:none;
 }
 .pad-btn.active{ background:rgba(184,144,63,0.65); border-color:var(--gold-bright); }
+/* A=반음(파랑) S=반음+2(보라) D=한 키(빨강) — 눌렀을 때 이펙트 색상과 동일하게 맞춤 */
+#padA.active{ background:rgba(61,127,224,0.75); border-color:#3d7fe0; }
+#padS.active{ background:rgba(138,79,209,0.75); border-color:#8a4fd1; }
+#padD.active{ background:rgba(224,69,63,0.75); border-color:#e0453f; }
 
 /* 반음(A)/한 키(S) 적용 시 클릭·터치 지점에 뜨는 터지는 이펙트 */
 .tap-burst{
@@ -1907,7 +1911,7 @@ function bindPadBtn(el, setDown){
   if(!el) return;
   let activePointerId = null;
   const down = (e)=>{
-    e.preventDefault(); e.stopPropagation();
+    e.preventDefault();
     activePointerId = e.pointerId;
     try{ el.setPointerCapture(e.pointerId); }catch(err){}
     setDown(true);
@@ -1915,7 +1919,7 @@ function bindPadBtn(el, setDown){
   };
   const up = (e)=>{
     if(activePointerId !== null && e.pointerId !== activePointerId) return;
-    e.preventDefault(); e.stopPropagation();
+    e.preventDefault();
     activePointerId = null;
     setDown(false);
     el.classList.remove('active');
