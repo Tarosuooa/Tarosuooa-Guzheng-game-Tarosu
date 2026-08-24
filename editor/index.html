@@ -272,6 +272,16 @@ textarea#exportBox{
   0%{ width:10px; height:10px; opacity:0.85; }
   100%{ width:70px; height:70px; opacity:0; }
 }
+.zone-tap-mark{
+  position:fixed; width:26px; height:26px; border-radius:50%;
+  border:2px solid rgba(220,181,106,0.85); background:rgba(220,181,106,0.15);
+  pointer-events:none; z-index:499; transform:translate(-50%,-50%);
+  animation:zoneTapAnim 0.32s ease-out forwards;
+}
+@keyframes zoneTapAnim{
+  0%{ transform:translate(-50%,-50%) scale(0.5); opacity:0.9; }
+  100%{ transform:translate(-50%,-50%) scale(1.3); opacity:0; }
+}
 .test-note{
   position:absolute; width:16px; height:16px; border-radius:50%;
   background:#c9c5bd;
@@ -943,6 +953,11 @@ const SEMITONE2_LANES = new Set([1,4,6,9,11]); // B3,F#4,B4,F#5,B5
 const JUDGE_LINE_PCT = 0.78; // .judge-line의 CSS left:78%와 반드시 맞춰야 함
 const JUDGE_TOUCH_TOLERANCE_PX = 34;
 const SWIPE_THRESHOLD_PX = 14;
+// 반음+2 판정 기준: 판정선 오른쪽 어디서 출발했든 상관없이, 판정선까지 '빠르게' 도달했는지로 결정한다 (게임 화면과 동일).
+// 반음+2 판정 기준: 판정선 오른쪽을 빠르게 한 번 탭했다 뗀 뒤(예약), 바로 이어서 판정선으로 슬라이드하면 인정한다 (게임 화면과 동일).
+const QUICK_TAP_MS = 300;
+const SEMITONE2_PRIME_GRACE_MS = 500;
+let semitone2PrimedUntil = 0;
 // 반음(파랑)/반음+2(보라)/한 키(빨강) 적용 지점에 가볍게 터지는 이펙트 (게임 화면과 동일)
 function spawnBurstEffect(x, y, color){
   const el = document.createElement('div');
@@ -953,6 +968,15 @@ function spawnBurstEffect(x, y, color){
   el.style.boxShadow = '0 0 16px 4px ' + color;
   document.body.appendChild(el);
   setTimeout(()=> el.remove(), 480);
+}
+// 반음/반음+2/한 키 UP 사전 클릭이 인정되는 구역을 터치했을 때 뜨는 작고 옅은 표시 (게임 화면과 동일)
+function spawnZoneIndicator(x, y){
+  const el = document.createElement('div');
+  el.className = 'zone-tap-mark';
+  el.style.left = x + 'px';
+  el.style.top = y + 'px';
+  document.body.appendChild(el);
+  setTimeout(()=> el.remove(), 320);
 }
 let currentBend = 'none'; // 'none' | 'semitone' | 'semitone2' | 'step'
 let currentTremoloMode = false;
@@ -1993,19 +2017,16 @@ function testJudgeLineX(){
 function isNearTestJudgeLine(clientX){
   return Math.abs(clientX - testJudgeLineX()) <= JUDGE_TOUCH_TOLERANCE_PX;
 }
-// 게임 화면과 동일한 방식: 화면 폭에 비례해서 '충분히 멀리서 출발했는지' 판단 (모바일 좁은 화면 대응)
-function isFarTestSemitoneStart(startX){
-  const stageRect = document.getElementById('testStage').getBoundingClientRect();
-  const judgeX_ = testJudgeLineX();
-  const availableRightSpace = stageRect.right - judgeX_;
-  const farThreshold = judgeX_ + JUDGE_TOUCH_TOLERANCE_PX + Math.max(0, availableRightSpace - JUDGE_TOUCH_TOLERANCE_PX) * 0.5;
-  return startX >= farThreshold;
-}
 function startTestPointerGesture(e, laneIndex, laneEl){
   const pointerId = e.pointerId;
   const startX = e.clientX;
+  const startTime = performance.now();
   let currentY = e.clientY;
   let triggered = false;
+  const startedOutsideRight = startX > testJudgeLineX() + JUDGE_TOUCH_TOLERANCE_PX;
+  if(!isNearTestJudgeLine(startX)){
+    spawnZoneIndicator(startX, currentY);
+  }
 
   function attemptTrigger(currentX){
     if(triggered) return;
@@ -2018,8 +2039,10 @@ function startTestPointerGesture(e, laneIndex, laneEl){
       if(traveled > 0){
         bend = 'step';
       }else{
-        const farAway = isFarTestSemitoneStart(startX);
-        bend = (farAway && SEMITONE2_LANES.has(laneIndex)) ? 'semitone2' : 'semitone';
+        // 직전에 '판정선 오른쪽을 빠르게 한 번 탭했다 뗀' 예약이 남아있고 B·F# 줄이면 반음+2 (게임 화면과 동일)
+        const primed = performance.now() <= semitone2PrimedUntil;
+        bend = (primed && SEMITONE2_LANES.has(laneIndex)) ? 'semitone2' : 'semitone';
+        semitone2PrimedUntil = 0;
       }
     }
     cleanup();
@@ -2039,6 +2062,12 @@ function startTestPointerGesture(e, laneIndex, laneEl){
   function onUp(ev){
     if(ev.pointerId !== pointerId) return;
     cleanup();
+    if(!triggered && startedOutsideRight){
+      const tapDurationMs = performance.now() - startTime;
+      if(tapDurationMs <= QUICK_TAP_MS){
+        semitone2PrimedUntil = performance.now() + SEMITONE2_PRIME_GRACE_MS;
+      }
+    }
   }
   function cleanup(){
     window.removeEventListener('pointermove', onMove);
@@ -2246,13 +2275,13 @@ function onTestLaneTap(laneIndex, laneEl, isTremoloTick, forcedBend, coords){
   if(best.el) best.el.remove();
 }
 
-/* 게임 화면과 동일한 방식의 트레몰로 미리듣기: 60ms 이상 꾹 누르면 55ms 간격으로 반복 */
+/* 게임 화면과 동일한 방식의 트레몰로 미리듣기: 80ms 이상 꾹 누르면 55ms 간격으로 반복 */
 let testTremoloHoldTimeout = null, testTremoloInterval = null;
 function beginTestTremolo(laneIndex, laneEl){
   stopTestTremolo();
   testTremoloHoldTimeout = setTimeout(() => {
     testTremoloInterval = setInterval(() => { onTestLaneTap(laneIndex, laneEl, true); }, 55);
-  }, 60);
+  }, 80);
 }
 function stopTestTremolo(){
   if(testTremoloHoldTimeout){ clearTimeout(testTremoloHoldTimeout); testTremoloHoldTimeout = null; }
