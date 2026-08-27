@@ -1009,7 +1009,12 @@ function startPointerGesture(e, laneIndex, laneEl){
     const traveled = currentX - startX;
     const startedAwayFromLine = !isNearJudgeLine(startX);
     if(startedAwayFromLine && Math.abs(traveled) >= SWIPE_THRESHOLD_PX){
-      if(traveled > 0){
+      // 키보드 A/S/D를 누른 채로 슬라이드하면, 슬라이드 방향과 무관하게 누르고 있는 키가 우선한다
+      // (예전엔 슬라이드 동작이 키 입력을 완전히 무시해서, F#·B 줄에서 S를 누른 채 슬라이드해도 반음+2가 안 걸리는 오류가 있었다)
+      const heldBend = resolveBendFallback(laneIndex);
+      if(heldBend){
+        bend = heldBend;
+      }else if(traveled > 0){
         bend = 'step'; // 오른쪽으로 다가옴=한 키
       }else{
         // 왼쪽에서 다가옴=반음. 직전에 '판정선 오른쪽을 빠르게 한 번 탭했다 뗀' 예약이 남아있고
