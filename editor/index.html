@@ -235,6 +235,13 @@ textarea#exportBox{
   border-bottom:1px solid rgba(220,181,106,0.12); cursor:pointer;
 }
 .test-lane:last-child{ border-bottom:none; }
+/* 키보드(↑↓)로 현재 선택 중인 줄을 표시하는 마크 (게임 화면과 동일) */
+.test-lane.keyboard-selected::before{
+  content:''; position:absolute; left:40px; top:0; bottom:0; width:6px;
+  background:var(--gold-bright); box-shadow:0 0 8px 1px rgba(220,181,106,0.8);
+  z-index:7; pointer-events:none;
+}
+.test-lane.keyboard-selected .test-lane-label{ color:var(--gold-bright); font-weight:800; }
 .test-lane-hit{
   position:absolute; top:0; bottom:0; left:0; right:0; cursor:pointer;
   z-index:5; touch-action:none;
@@ -792,7 +799,7 @@ async function playNote(lane, vol, bend){
    a+클릭=반음, s+클릭=한 키 위로
    Q/W/E/R/T/Y/U/I=0.25/0.5/0.75/1/1.25/1.5/1.75/2박 선택, Ctrl+Z=뒤로, Ctrl+Y=다시 실행, Ctrl+A=전체 선택,
    Delete/Backspace=선택 삭제, Esc=선택 해제 */
-let aKeyDown = false, sKeyDown = false, dKeyDown = false;
+let aKeyDown = false, sKeyDown = false, dKeyDown = false, shiftKeyDown = false;
 const SPACEBAR_EXEMPT_IDS = new Set(['volumeSlider', 'exportBox']); // 볼륨바·코드창은 글자 입력용이 아니라서, 포커스가 있어도 스페이스바 단축키를 막지 않는다
 
 /* ===================== 단축키 안내 패널 (관리자는 키를 다시 지정하거나 설명을 고칠 수 있음) =====================
@@ -919,6 +926,22 @@ window.addEventListener('keydown', (e)=>{
   if(k==='a' && !(e.ctrlKey||e.metaKey) && !typing) aKeyDown = true;
   if(k==='s' && !(e.ctrlKey||e.metaKey) && !typing) sKeyDown = true;
   if(k==='d' && !(e.ctrlKey||e.metaKey) && !typing) dKeyDown = true;
+  if(e.key === 'Shift' && !typing) shiftKeyDown = true;
+  // 테스트 플레이 창이 열려 있을 때만: 게임 화면과 동일한 ↑/↓(현 선택) + 스페이스바(뜯기) 조작
+  if(document.getElementById('testOverlay').classList.contains('show')){
+    if(e.key === 'ArrowUp' || e.key === 'ArrowDown'){
+      e.preventDefault();
+      moveTestKeyboardSelection(e.key === 'ArrowUp' ? -1 : 1);
+    }
+    if(e.code === 'Space'){
+      e.preventDefault();
+      if(!testSpaceHeld){
+        testSpaceHeld = true;
+        plinkTestKeyboardSelectedLane();
+      }
+      return;
+    }
+  }
   if(typing) return; // 입력창에 타이핑 중일 땐 아래 단축키들을 막는다
 
   if((e.ctrlKey||e.metaKey) && k==='z'){ e.preventDefault(); undo(); return; }
@@ -941,8 +964,13 @@ window.addEventListener('keyup', (e)=>{
   if(k==='a') aKeyDown = false;
   if(k==='s') sKeyDown = false;
   if(k==='d') dKeyDown = false;
+  if(e.key === 'Shift') shiftKeyDown = false;
+  if(e.code === 'Space' && document.getElementById('testOverlay').classList.contains('show')){
+    testSpaceHeld = false;
+    stopTestTremolo();
+  }
 });
-window.addEventListener('blur', ()=>{ aKeyDown=false; sKeyDown=false; dKeyDown=false; });
+window.addEventListener('blur', ()=>{ aKeyDown=false; sKeyDown=false; dKeyDown=false; shiftKeyDown=false; testSpaceHeld=false; });
 
 /* 위쪽 툴바의 '반음 UP' · '반음 UP+2' · '한 키 UP' · '트레몰로 추가' 버튼: 눌러서 모드를 켜면
    키보드 없이도 계속 그 표시로 클릭할 수 있다 (다시 누르면 꺼짐). 반음/반음+2/한 키 UP은 서로 배타적이지만,
@@ -2050,7 +2078,7 @@ function startTestPointerGesture(e, laneIndex, laneEl){
       onTestLaneTap(laneIndex, laneEl, false, bend, {x:currentX, y:currentY});
     }else{
       onTestLaneTap(laneIndex, laneEl, false, undefined, {x:currentX, y:currentY});
-      beginTestTremolo(laneIndex, laneEl);
+      if(shiftKeyDown) beginTestTremolo(laneIndex, laneEl); // Shift를 누른 채 꾹 눌러야만 트레몰로가 걸림 (게임 화면과 동일)
     }
     startTestDragGlide(pointerId, laneIndex);
   }
@@ -2135,6 +2163,7 @@ function startTestPlay(){
   document.getElementById('testEndScreen').classList.remove('show');
   document.getElementById('testStage').querySelectorAll('.test-note, .test-hit-pop').forEach(el=>el.remove());
   buildTestLanes();
+  updateTestKeyboardSelectionMarker(); // 새로 만든 레인 DOM에도 기존 키보드 선택 상태(마크)를 다시 반영
 
   testScore = 0; testCombo = 0; testMaxCombo = 0;
   testPerfectCount = 0; testGoodCount = 0; testJudgedCount = 0;
@@ -2277,6 +2306,33 @@ function onTestLaneTap(laneIndex, laneEl, isTremoloTick, forcedBend, coords){
 
 /* 게임 화면과 동일한 방식의 트레몰로 미리듣기: 80ms 이상 꾹 누르면 55ms 간격으로 반복 */
 let testTremoloHoldTimeout = null, testTremoloInterval = null;
+/* ---------- 게임 화면과 동일한 키보드(↑↓ + 스페이스바) 조작: 테스트 플레이 중에도 그대로 적용 ---------- */
+let testKeyboardSelectedLane = null;
+let testSpaceHeld = false;
+function moveTestKeyboardSelection(direction){
+  if(testKeyboardSelectedLane === null){
+    testKeyboardSelectedLane = 6; // B4 — 처음 누르면 항상 여기서 시작
+  }else{
+    testKeyboardSelectedLane = Math.max(0, Math.min(12, testKeyboardSelectedLane + direction));
+  }
+  updateTestKeyboardSelectionMarker();
+}
+function updateTestKeyboardSelectionMarker(){
+  testLaneEls.forEach((lane, i)=>{
+    if(lane) lane.classList.toggle('keyboard-selected', i === testKeyboardSelectedLane);
+  });
+}
+function plinkTestKeyboardSelectedLane(){
+  if(testKeyboardSelectedLane === null) return;
+  const laneEl = testLaneEls[testKeyboardSelectedLane];
+  if(!laneEl) return;
+  const stageRect = document.getElementById('testStage').getBoundingClientRect();
+  const laneH = stageRect.height / 13;
+  const coords = { x: testJudgeLineX(), y: stageRect.top + laneH * (testKeyboardSelectedLane + 0.5) };
+  onTestLaneTap(testKeyboardSelectedLane, laneEl, false, undefined, coords);
+  if(shiftKeyDown) beginTestTremolo(testKeyboardSelectedLane, laneEl); // Shift를 누른 채 스페이스바를 눌러야만 트레몰로가 걸림 (게임 화면과 동일)
+}
+
 function beginTestTremolo(laneIndex, laneEl){
   stopTestTremolo();
   testTremoloHoldTimeout = setTimeout(() => {
