@@ -71,6 +71,12 @@ h1{ font-size:20px; color:var(--wood-deep); font-family:'Nanum Myeongjo',serif; 
   font-size:13px; padding:8px 16px; border-radius:18px; cursor:pointer;
   border:1px solid var(--wood); background:var(--wood); color:var(--paper);
 }
+#recToggleBtn.recording{ background:#c0272d; border-color:#c0272d; color:#fff; animation:recPulse 1s infinite; }
+@keyframes recPulse{ 0%,100%{ box-shadow:0 0 0 0 rgba(192,39,45,0.6); } 50%{ box-shadow:0 0 0 8px rgba(192,39,45,0); } }
+.rec-playhead{
+  position:absolute; top:0; bottom:0; width:2px; background:#c0272d;
+  box-shadow:0 0 8px 1px rgba(192,39,45,0.8); z-index:6; pointer-events:none; display:none;
+}
 .btn.ghost{ background:transparent; color:var(--wood); }
 .btn.small{ padding:5px 12px; font-size:12px; }
 .dur-btn{
@@ -85,7 +91,14 @@ h1{ font-size:20px; color:var(--wood-deep); font-family:'Nanum Myeongjo',serif; 
   user-select:none;
 }
 .grid{ display:inline-block; position:relative; }
-.row{ display:flex; align-items:center; height:26px; }
+.row{ display:flex; align-items:center; height:26px; position:relative; }
+.rec-lane-hit{
+  position:absolute; left:40px; right:0; top:0; bottom:0; z-index:20;
+  pointer-events:none; cursor:pointer; touch-action:none;
+}
+.rec-lane-hit.active{ pointer-events:auto; background:rgba(192,39,45,0.06); }
+#recGrid .row.keyboard-selected{ background:rgba(220,181,106,0.12); }
+#recGrid .row.keyboard-selected .row-label{ color:var(--gold-bright); font-weight:800; }
 .row-label{
   width:40px; flex:none; font-size:10.5px; color:rgba(241,233,216,0.55);
   font-family:'Noto Sans KR',sans-serif; text-align:right; padding-right:8px;
@@ -398,6 +411,7 @@ textarea#exportBox{
   <button class="btn small" onclick="openPublishModal()">✅ 편집 완료</button>
   <button class="btn small ghost" onclick="openImportCodeModal()">📋 코드 붙여넣기</button>
   <button class="btn small ghost" onclick="openShortcutsModal()">⌨️ 단축키 안내</button>
+  <button class="btn small ghost" onclick="openRecordModal()">⏺ 녹화</button>
   <span class="fmt-sep"></span>
   <span style="color:var(--ink-soft); font-size:12.5px;">선택 이동:</span>
   <button class="nudge-btn" onclick="nudgeSelection(-1,0)" title="계이름 위로">▲</button>
@@ -463,6 +477,31 @@ textarea#exportBox{
     <div class="modal-actions-row" style="margin-top:12px;">
       <button class="btn small ghost" id="shortcutsResetBtn" onclick="resetShortcuts()" style="display:none;">기본값으로 초기화</button>
       <button class="btn small ghost" onclick="closeShortcutsModal()">닫기</button>
+    </div>
+  </div>
+</div>
+
+<!-- 녹화: REC을 켜고 실제로 연주(클릭/터치, 키보드 ↑↓+스페이스바)하면 그 타이밍 그대로 블록이 만들어짐 -->
+<div class="modal-overlay" id="recordModal">
+  <div class="modal-box" style="max-width:960px;">
+    <div class="modal-head">
+      <h2 id="recordModalTitle">녹화</h2>
+      <button class="modal-close" onclick="closeRecordModal()">✕</button>
+    </div>
+    <p class="modal-sub">🔴 REC을 누르면 빨갛게 바뀌면서 녹화가 시작돼요. 그 상태에서 아래 줄을 클릭/터치하거나(A/S/D+클릭, Shift+꾹 누르기도 동일하게 적용) 키보드 ↑↓+스페이스바로 연주하면, 누른 시점과 길이 그대로 블록이 만들어져요. 다시 누르면 일시정지예요. 녹화 중이 아니어도 아래 그리드는 직접 클릭해서 블록을 고칠 수 있어요.</p>
+    <div style="display:flex; align-items:center; gap:12px; margin:10px 0;">
+      <button class="btn" id="recToggleBtn" onclick="toggleRec()" style="border-radius:24px; padding:10px 28px; font-weight:800;">🔴 REC</button>
+      <span id="recStatusText" style="font-size:12.5px; color:var(--ink-soft);">대기 중</span>
+      <span style="margin-left:auto; font-size:12.5px; color:var(--ink-soft);">녹화 길이: <b id="recElapsedLabel">0.0초</b></span>
+    </div>
+    <div class="grid-wrap" id="recGridWrap" style="max-height:340px; overflow-y:auto; position:relative;">
+      <div class="grid" id="recGrid"><div class="rec-playhead" id="recPlayhead"></div></div>
+      <div class="countdown-screen" id="recCountdownScreen"><div id="recCountdownText" style="font-family:'Nanum Myeongjo',serif; font-size:22px; font-weight:800; color:var(--gold-bright); text-shadow:0 0 24px rgba(220,181,106,0.8); text-align:center; padding:0 20px;">잠시 후 녹화가 시작됩니다</div></div>
+    </div>
+    <div class="modal-actions-row" style="margin-top:12px;">
+      <button class="btn small ghost" onclick="resetRecording()">초기화</button>
+      <button class="btn small" onclick="applyRecording()">✅ 적용(편집기로 옮기기)</button>
+      <button class="btn small ghost" onclick="closeRecordModal()">닫기</button>
     </div>
   </div>
 </div>
@@ -601,7 +640,7 @@ const EDITABLE_SELECTOR = 'h1, .sub, .guide, .modal-box label, .modal-head h2, .
 const NON_EDITABLE_IDS = new Set([
   'testScore','testCombo','testJudgment','editBannerText','authStatus',
   'testCountdownNum','testFinalScore','testFinalCombo',
-  'playBtn','textEditToggleBtn'
+  'playBtn','textEditToggleBtn','recToggleBtn','recStatusText','recElapsedLabel'
 ]);
 
 function getEditableTextElements(){
@@ -923,10 +962,22 @@ window.addEventListener('keydown', (e)=>{
   const tag = (e.target.tagName||'').toLowerCase();
   const typing = (tag==='input' || tag==='textarea') && !SPACEBAR_EXEMPT_IDS.has(e.target.id);
 
-  if(k==='a' && !(e.ctrlKey||e.metaKey) && !typing) aKeyDown = true;
-  if(k==='s' && !(e.ctrlKey||e.metaKey) && !typing) sKeyDown = true;
-  if(k==='d' && !(e.ctrlKey||e.metaKey) && !typing) dKeyDown = true;
-  if(e.key === 'Shift' && !typing) shiftKeyDown = true;
+  if(k==='a' && !(e.ctrlKey||e.metaKey) && !typing){
+    aKeyDown = true;
+    if(!e.repeat) applyBendKeyToSelection('semitone'); // 이미 선택된 블록이 있으면 즉시 반음으로 바꿔준다
+  }
+  if(k==='s' && !(e.ctrlKey||e.metaKey) && !typing){
+    sKeyDown = true;
+    if(!e.repeat) applyBendKeyToSelection('semitone2');
+  }
+  if(k==='d' && !(e.ctrlKey||e.metaKey) && !typing){
+    dKeyDown = true;
+    if(!e.repeat) applyBendKeyToSelection('step');
+  }
+  if(e.key === 'Shift' && !typing){
+    shiftKeyDown = true;
+    if(!e.repeat) applyTremoloKeyToSelection();
+  }
   // 테스트 플레이 창이 열려 있을 때만: 게임 화면과 동일한 ↑/↓(현 선택) + 스페이스바(뜯기) 조작
   if(document.getElementById('testOverlay').classList.contains('show')){
     if(e.key === 'ArrowUp' || e.key === 'ArrowDown'){
@@ -944,20 +995,42 @@ window.addEventListener('keydown', (e)=>{
   }
   if(typing) return; // 입력창에 타이핑 중일 땐 아래 단축키들을 막는다
 
-  if((e.ctrlKey||e.metaKey) && k==='z'){ e.preventDefault(); undo(); return; }
-  if((e.ctrlKey||e.metaKey) && k==='y'){ e.preventDefault(); redo(); return; }
-  if((e.ctrlKey||e.metaKey) && k==='a'){ e.preventDefault(); selectAllNotes(); return; }
+  if((e.ctrlKey||e.metaKey) && k==='z'){ e.preventDefault(); isRecEditingContext() ? recUndo() : undo(); return; }
+  if((e.ctrlKey||e.metaKey) && k==='y'){ e.preventDefault(); isRecEditingContext() ? recRedo() : redo(); return; }
+  if((e.ctrlKey||e.metaKey) && k==='a'){
+    e.preventDefault();
+    if(isRecEditingContext()) selectAllNotes(recCells, recSelectedCells, refreshRecGrid);
+    else selectAllNotes();
+    return;
+  }
   for(const s of SHORTCUT_DEFAULTS){
     if(s.type === 'dur' && matchesActiveKey(findShortcutKey(s.id), e, k)){
-      selectDurationByKey(s.value);
+      e.preventDefault();
+      selectDurationByKey(s.value, isRecEditingContext() ? recCtx() : undefined);
       return;
     }
   }
   if(matchesActiveKey(findShortcutKey('playPause') || 'Space', e, k)){
+    // 녹화 창이 열려 있을 때 스페이스바는 녹화 창 전용 핸들러가 처리하므로(녹음/재생), 여기서는 건드리지 않는다
+    if(document.getElementById('recordModal').classList.contains('show')) return;
     e.preventDefault(); handleSpacebarPress(); return;
   }
-  if((k==='delete'||k==='backspace') && selectedCells.size>0){ e.preventDefault(); deleteSelectedNotes(); return; }
-  if(k==='escape' && selectedCells.size>0){ selectedCells.clear(); refreshGrid(); return; }
+  if(k==='delete'||k==='backspace'){
+    if(isRecEditingContext()){
+      if(recSelectedCells.size>0){ e.preventDefault(); deleteSelectedNotes(recSelectedCells, recCells, recCellTypes, recPushHistory, refreshRecGrid); }
+      return;
+    }
+    if(selectedCells.size>0){ e.preventDefault(); deleteSelectedNotes(); }
+    return;
+  }
+  if(k==='escape'){
+    if(isRecEditingContext()){
+      if(recSelectedCells.size>0){ recSelectedCells.clear(); refreshRecGrid(); }
+      return;
+    }
+    if(selectedCells.size>0){ selectedCells.clear(); refreshGrid(); }
+    return;
+  }
 });
 window.addEventListener('keyup', (e)=>{
   const k = e.key.toLowerCase();
@@ -1067,11 +1140,13 @@ function cellKey(lane, step){ return lane + ',' + step; }
 let undoStack = [];
 let redoStack = [];
 const MAX_HISTORY = 100;
-function snapshotState(){
-  return { cells: cells.map(row=>row.slice()), cellTypes: cellTypes.map(row=>row.slice()) };
+function snapshotState(srcCells, srcTypes){
+  srcCells = srcCells || cells; srcTypes = srcTypes || cellTypes;
+  return { cells: srcCells.map(row=>row.slice()), cellTypes: srcTypes.map(row=>row.slice()) };
 }
-function restoreState(snap){
-  for(let l=0; l<13; l++){ cells[l] = snap.cells[l].slice(); cellTypes[l] = snap.cellTypes[l].slice(); }
+function restoreState(snap, dstCells, dstTypes){
+  dstCells = dstCells || cells; dstTypes = dstTypes || cellTypes;
+  for(let l=0; l<13; l++){ dstCells[l] = snap.cells[l].slice(); dstTypes[l] = snap.cellTypes[l].slice(); }
 }
 function pushHistory(){
   undoStack.push(snapshotState());
@@ -1093,69 +1168,99 @@ function redo(){
   refreshGrid();
 }
 
-function setDuration(d, btn){
+// 녹화 창 전용 되돌리기/다시 실행 (메인 편집기와 완전히 별개의 기록을 갖는다)
+let recUndoStack = [];
+let recRedoStack = [];
+function recPushHistory(){
+  recUndoStack.push(snapshotState(recCells, recCellTypes));
+  if(recUndoStack.length > MAX_HISTORY) recUndoStack.shift();
+  recRedoStack.length = 0;
+}
+function recUndo(){
+  if(recUndoStack.length === 0) return;
+  recRedoStack.push(snapshotState(recCells, recCellTypes));
+  restoreState(recUndoStack.pop(), recCells, recCellTypes);
+  recSelectedCells.clear();
+  refreshRecGrid();
+}
+function recRedo(){
+  if(recRedoStack.length === 0) return;
+  recUndoStack.push(snapshotState(recCells, recCellTypes));
+  restoreState(recRedoStack.pop(), recCells, recCellTypes);
+  recSelectedCells.clear();
+  refreshRecGrid();
+}
+
+function setDuration(d, btn, ctx){
   currentDur = d;
   document.querySelectorAll('.dur-btn').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');
-  applyDurationToSelection(d); // 이미 선택된 블록이 있으면 그 블록들의 길이도 함께 바꾼다
+  if(btn) btn.classList.add('active');
+  if(ctx) applyDurationToSelection(d, ctx.sel, ctx.cells, ctx.types, ctx.push, ctx.refresh);
+  else applyDurationToSelection(d); // 이미 선택된 블록이 있으면 그 블록들의 길이도 함께 바꾼다
 }
 /* ---------- 이미 찍혀 있는 선택된 블록들에게 음 길이/반음/트레몰로를 일괄 적용 ----------
    개수와 상관없이, 지금 선택되어 있는 블록이 있으면 편집 도구 버튼이나 단축키를 눌렀을 때
    '앞으로 찍을 노트의 기본값'만 바뀌는 게 아니라 선택된 블록들 자체가 바로 그렇게 수정된다. */
-function applyDurationToSelection(newDur){
-  if(selectedCells.size === 0) return false;
-  pushHistory();
+function applyDurationToSelection(newDur, selSet, srcCells, srcTypes, pushHist, refresh){
+  selSet = selSet || selectedCells; srcCells = srcCells || cells; srcTypes = srcTypes || cellTypes;
+  pushHist = pushHist || pushHistory; refresh = refresh || refreshGrid;
+  if(selSet.size === 0) return false;
+  pushHist();
   let changed = false;
-  selectedCells.forEach(key=>{
+  selSet.forEach(key=>{
     const [lane, step] = key.split(',').map(Number);
-    const oldSpan = cells[lane][step];
+    const oldSpan = srcCells[lane][step];
     if(oldSpan <= 0) return; // 이미 지워졌거나 가려진 칸이면 건너뜀 (선택 키는 항상 시작 칸 기준)
-    const origType = cellTypes[lane][step];
+    const origType = srcTypes[lane][step];
     // 같은 레인에서 이 노트 바로 다음에 오는 '선택되지 않은' 다른 노트를 침범하지 않도록 제한한다
     let nextStart = STEPS;
     for(let s = step + 1; s < STEPS; s++){
-      if(cells[lane][s] > 0 && !selectedCells.has(cellKey(lane, s))){ nextStart = s; break; }
+      if(srcCells[lane][s] > 0 && !selSet.has(cellKey(lane, s))){ nextStart = s; break; }
     }
     const finalSpan = Math.max(1, Math.min(newDur, nextStart - step, STEPS - step));
-    for(let s = step; s < step + oldSpan; s++){ cells[lane][s] = 0; cellTypes[lane][s] = 'normal'; }
-    cells[lane][step] = finalSpan;
-    cellTypes[lane][step] = origType;
+    for(let s = step; s < step + oldSpan; s++){ srcCells[lane][s] = 0; srcTypes[lane][s] = 'normal'; }
+    srcCells[lane][step] = finalSpan;
+    srcTypes[lane][step] = origType;
     changed = true;
   });
-  if(changed) refreshGrid();
+  if(changed) refresh();
   return changed;
 }
-function applyBendToSelection(bendType){
-  if(selectedCells.size === 0) return false;
-  pushHistory();
-  selectedCells.forEach(key=>{
+function applyBendToSelection(bendType, selSet, srcCells, srcTypes, pushHist, refresh){
+  selSet = selSet || selectedCells; srcCells = srcCells || cells; srcTypes = srcTypes || cellTypes;
+  pushHist = pushHist || pushHistory; refresh = refresh || refreshGrid;
+  if(selSet.size === 0) return false;
+  pushHist();
+  selSet.forEach(key=>{
     const [lane, step] = key.split(',').map(Number);
-    if(cells[lane][step] <= 0) return;
-    const hasTremolo = cellTypes[lane][step].includes('tremolo');
+    if(srcCells[lane][step] <= 0) return;
+    const hasTremolo = srcTypes[lane][step].includes('tremolo');
     const safeBend = bendType === 'none' ? 'none' : sanitizeBendForLane(lane, bendType);
-    cellTypes[lane][step] = composeNoteType(safeBend, hasTremolo);
+    srcTypes[lane][step] = composeNoteType(safeBend, hasTremolo);
   });
-  refreshGrid();
+  refresh();
   return true;
 }
-function applyTremoloToSelection(){
-  if(selectedCells.size === 0) return false;
-  pushHistory();
+function applyTremoloToSelection(selSet, srcCells, srcTypes, pushHist, refresh){
+  selSet = selSet || selectedCells; srcCells = srcCells || cells; srcTypes = srcTypes || cellTypes;
+  pushHist = pushHist || pushHistory; refresh = refresh || refreshGrid;
+  if(selSet.size === 0) return false;
+  pushHist();
   // 선택된 블록 중 하나라도 트레몰로가 없으면 전체 ON으로, 이미 전부 있으면 전체 OFF로 (토글처럼 동작)
   let anyWithoutTremolo = false;
-  selectedCells.forEach(key=>{
+  selSet.forEach(key=>{
     const [lane, step] = key.split(',').map(Number);
-    if(cells[lane][step] > 0 && !cellTypes[lane][step].includes('tremolo')) anyWithoutTremolo = true;
+    if(srcCells[lane][step] > 0 && !srcTypes[lane][step].includes('tremolo')) anyWithoutTremolo = true;
   });
-  selectedCells.forEach(key=>{
+  selSet.forEach(key=>{
     const [lane, step] = key.split(',').map(Number);
-    if(cells[lane][step] <= 0) return;
-    const curType = cellTypes[lane][step];
+    if(srcCells[lane][step] <= 0) return;
+    const curType = srcTypes[lane][step];
     const bendPart = curType.replace('-tremolo','').replace('tremolo','none');
     const bend = bendPart === 'normal' ? 'none' : bendPart;
-    cellTypes[lane][step] = composeNoteType(bend, anyWithoutTremolo);
+    srcTypes[lane][step] = composeNoteType(bend, anyWithoutTremolo);
   });
-  refreshGrid();
+  refresh();
   return true;
 }
 // 편집 도구 모음 접기/펼치기 (선택 상태는 기억해뒀다가 다음에 열 때도 유지)
@@ -1176,9 +1281,33 @@ function toggleEditToolbar(){
   }catch(e){}
 })();
 
-function selectDurationByKey(d){
+function selectDurationByKey(d, ctx){
   const btn = document.querySelector('.dur-btn[data-dur="' + d + '"]');
-  if(btn) setDuration(d, btn);
+  setDuration(d, btn, ctx);
+}
+// 지금 활성화된 편집 대상이 '녹화 창(일시정지 상태)'인지 판단 — 맞다면 모든 단축키가 녹화 데이터 쪽으로 향한다
+function isRecEditingContext(){
+  const modal = document.getElementById('recordModal');
+  return !!(modal && modal.classList.contains('show') && !recActive && !recCountingDown);
+}
+function recCtx(){
+  return { sel: recSelectedCells, cells: recCells, types: recCellTypes, push: recPushHistory, refresh: refreshRecGrid };
+}
+// 이미 선택된 블록이 있는 상태에서 A/S/D/Shift 키를 누르면(편집기·녹화 창 공용),
+// '앞으로 찍을 노트의 기본값'만 바뀌는 게 아니라 선택된 블록 자체가 바로 그 반음/트레몰로로 바뀐다.
+function applyBendKeyToSelection(bendType){
+  if(isRecEditingContext()){
+    if(recSelectedCells.size > 0) applyBendToSelection(bendType, recSelectedCells, recCells, recCellTypes, recPushHistory, refreshRecGrid);
+  }else if(selectedCells.size > 0){
+    applyBendToSelection(bendType);
+  }
+}
+function applyTremoloKeyToSelection(){
+  if(isRecEditingContext()){
+    if(recSelectedCells.size > 0) applyTremoloToSelection(recSelectedCells, recCells, recCellTypes, recPushHistory, refreshRecGrid);
+  }else if(selectedCells.size > 0){
+    applyTremoloToSelection();
+  }
 }
 
 function buildGrid(){
@@ -1307,11 +1436,20 @@ let movingSelection = false;
 let moveAnchorLane = 0;
 let moveAnchorStep = 0;
 let lastSelectionAnchor = null; // {lane, step} - Shift+클릭 범위 선택의 기준점(마지막으로 선택했던 노트)
+// 녹화 창(일시정지 상태) 전용 편집 상태 — 메인 그리드와 완전히 분리해서, 서로 영향을 주지 않는다
+const recSelectedCells = new Set();
+let recLastSelectionAnchor = null;
+let recDragging = false;
+let recDragAdding = true;
+let recDragType = 'normal';
+let recMovingSelection = false;
+let recMoveAnchorLane = 0;
+let recMoveAnchorStep = 0;
 // 드래그/이동 상태를 확실히 풀어주는 리스너들.
 // 'mouseup' 하나만 믿으면, 마우스 버튼을 브라우저 창 밖에서 놓았을 때(예: 창 경계 밖으로 나가서 뗀 경우)
 // 이 이벤트 자체가 안 잡혀서 dragging이 계속 true로 남아, 이후 커서만 움직여도 칸이 계속 칠해지는 버그가 있었다.
 // 그래서 pointerup/pointercancel과, 창 포커스를 잃거나 마우스가 문서 밖으로 나가는 경우까지 전부 안전망으로 잡아준다.
-function resetDragState(){ dragging = false; movingSelection = false; }
+function resetDragState(){ dragging = false; movingSelection = false; recDragging = false; recMovingSelection = false; }
 document.addEventListener('mouseup', resetDragState);
 document.addEventListener('pointerup', resetDragState);
 document.addEventListener('pointercancel', resetDragState);
@@ -1377,23 +1515,24 @@ function startTouchCellGesture(e, lane, step, cellEl){
 }
 
 // anchor 노트와 target 노트가 이루는 사각 범위(레인×타이밍) 안에 있는 노트를 전부 선택한다
-function selectRange(anchor, target){
+function selectRange(anchor, target, srcCells, selSet, refresh){
+  srcCells = srcCells || cells; selSet = selSet || selectedCells; refresh = refresh || refreshGrid;
   const stepMin = Math.min(anchor.step, target.step), stepMax = Math.max(anchor.step, target.step);
-  selectedCells.clear();
+  selSet.clear();
   // 레인(계이름)은 제한하지 않고, 선택한 두 지점의 타이밍(세로줄) 범위 안에 있는
   // 모든 계이름의 블록을 전부 선택한다.
   for(let lane = 0; lane < 13; lane++){
     // 시작 칸만 범위 안에 있는지가 아니라, 노트가 차지하는 구간 전체가 선택 범위와
     // 조금이라도 겹치면 선택한다 (범위 밖에서 시작해 범위 안으로 걸쳐 들어오는 긴 노트도 포함됨)
     for(let step = 0; step < STEPS; step++){
-      const dur = cells[lane][step];
+      const dur = srcCells[lane][step];
       if(dur > 0){
         const noteEnd = step + dur - 1;
-        if(step <= stepMax && noteEnd >= stepMin) selectedCells.add(cellKey(lane, step));
+        if(step <= stepMax && noteEnd >= stepMin) selSet.add(cellKey(lane, step));
       }
     }
   }
-  refreshGrid();
+  refresh();
 }
 
 // 선택된 노트들을 (deltaLane, deltaStep)만큼 한 번에 옮긴다. 하나라도 그리드 밖으로 나가면 이동을 취소.
@@ -1402,104 +1541,113 @@ function nudgeSelection(deltaLane, deltaStep){
   if(selectedCells.size === 0){ showEditorToast('먼저 옮길 음을 선택해주세요.'); return; }
   moveSelectedNotes(deltaLane, deltaStep);
 }
-function moveSelectedNotes(deltaLane, deltaStep){
-  if(selectedCells.size === 0) return false;
-  const entries = Array.from(selectedCells).map(key=>{
+function moveSelectedNotes(deltaLane, deltaStep, selSet, srcCells, srcTypes, pushHist, refresh){
+  selSet = selSet || selectedCells; srcCells = srcCells || cells; srcTypes = srcTypes || cellTypes;
+  pushHist = pushHist || pushHistory; refresh = refresh || refreshGrid;
+  if(selSet.size === 0) return false;
+  const entries = Array.from(selSet).map(key=>{
     const [lane, step] = key.split(',').map(Number);
-    return { lane, step, dur: cells[lane][step], type: cellTypes[lane][step] };
+    return { lane, step, dur: srcCells[lane][step], type: srcTypes[lane][step] };
   });
   for(const e of entries){
     const newLane = e.lane + deltaLane, newStep = e.step + deltaStep;
     if(newLane < 0 || newLane > 12 || newStep < 0 || newStep + e.dur > STEPS) return false;
   }
-  pushHistory();
+  pushHist();
   entries.forEach(e=>{
-    for(let s=e.step; s<e.step+e.dur; s++){ cells[e.lane][s] = 0; cellTypes[e.lane][s] = 'normal'; }
+    for(let s=e.step; s<e.step+e.dur; s++){ srcCells[e.lane][s] = 0; srcTypes[e.lane][s] = 'normal'; }
   });
   const newSelected = new Set();
   entries.forEach(e=>{
     const newLane = e.lane + deltaLane, newStep = e.step + deltaStep;
-    for(let s=newStep; s<newStep+e.dur; s++){ cells[newLane][s] = 0; cellTypes[newLane][s] = 'normal'; }
-    cells[newLane][newStep] = e.dur;
-    cellTypes[newLane][newStep] = e.type;
+    for(let s=newStep; s<newStep+e.dur; s++){ srcCells[newLane][s] = 0; srcTypes[newLane][s] = 'normal'; }
+    srcCells[newLane][newStep] = e.dur;
+    srcTypes[newLane][newStep] = e.type;
     newSelected.add(cellKey(newLane, newStep));
   });
-  selectedCells.clear();
-  newSelected.forEach(k => selectedCells.add(k));
-  refreshGrid();
+  selSet.clear();
+  newSelected.forEach(k => selSet.add(k));
+  refresh();
   return true;
 }
 
 // 클릭한 칸(가려진 칸이어도)이 속한 노트의 '시작 칸' step을 찾는다. 없으면 -1
-function findNoteStart(lane, step){
-  if(cells[lane][step] > 0) return step;
+function findNoteStart(lane, step, srcCells){
+  srcCells = srcCells || cells;
+  if(srcCells[lane][step] > 0) return step;
   for(let k=1; k<MAX_DUR; k++){
     const s = step - k;
     if(s < 0) break;
-    if(cells[lane][s] > k) return s;
+    if(srcCells[lane][s] > k) return s;
   }
   return -1;
 }
-function toggleSelectCell(lane, step){
-  const s = findNoteStart(lane, step);
+function toggleSelectCell(lane, step, srcCells, selSet, refresh){
+  srcCells = srcCells || cells; selSet = selSet || selectedCells; refresh = refresh || refreshGrid;
+  const s = findNoteStart(lane, step, srcCells);
   if(s === -1) return; // 노트가 없는 칸은 선택할 수 없음
   const key = cellKey(lane, s);
-  if(selectedCells.has(key)) selectedCells.delete(key); else selectedCells.add(key);
-  refreshGrid();
+  if(selSet.has(key)) selSet.delete(key); else selSet.add(key);
+  refresh();
 }
-function selectAllNotes(){
-  selectedCells.clear();
+function selectAllNotes(srcCells, selSet, refresh){
+  srcCells = srcCells || cells; selSet = selSet || selectedCells; refresh = refresh || refreshGrid;
+  selSet.clear();
   for(let lane=0; lane<13; lane++){
     for(let step=0; step<STEPS; step++){
-      if(cells[lane][step] > 0) selectedCells.add(cellKey(lane, step));
+      if(srcCells[lane][step] > 0) selSet.add(cellKey(lane, step));
     }
   }
-  refreshGrid();
+  refresh();
 }
-function deleteSelectedNotes(){
-  if(selectedCells.size === 0) return;
-  pushHistory();
-  selectedCells.forEach(key=>{
+function deleteSelectedNotes(selSet, srcCells, srcTypes, pushHist, refresh){
+  selSet = selSet || selectedCells; srcCells = srcCells || cells; srcTypes = srcTypes || cellTypes;
+  pushHist = pushHist || pushHistory; refresh = refresh || refreshGrid;
+  if(selSet.size === 0) return;
+  pushHist();
+  selSet.forEach(key=>{
     const [lane, step] = key.split(',').map(Number);
-    cells[lane][step] = 0;
-    cellTypes[lane][step] = 'normal';
+    srcCells[lane][step] = 0;
+    srcTypes[lane][step] = 'normal';
   });
-  selectedCells.clear();
-  refreshGrid();
+  selSet.clear();
+  refresh();
 }
 
-function paintCell(lane, step, add, noteType){
+function paintCell(lane, step, add, noteType, srcCells, srcTypes, pushHist, refresh){
+  srcCells = srcCells || cells; srcTypes = srcTypes || cellTypes;
+  pushHist = pushHist || pushHistory; refresh = refresh || refreshGrid;
   if(add){
-    if(cells[lane][step] > 0) return; // 이미 찍혀 있으면 그대로 둔다 (드래그 중 소리가 반복되지 않게)
+    if(srcCells[lane][step] > 0) return; // 이미 찍혀 있으면 그대로 둔다 (드래그 중 소리가 반복되지 않게)
     // 반음+2는 B·F#현에서만 의미가 있으므로, 어떤 경로로 들어오든 여기서 최종적으로 한 번 더 걸러준다
     if(noteType && noteType.startsWith('semitone2') && !SEMITONE2_LANES.has(lane)){
       noteType = noteType.replace('semitone2', 'semitone');
     }
-    pushHistory();
+    pushHist();
     const span = Math.min(currentDur, STEPS - step);
-    for(let s=step; s<step+span; s++){ cells[lane][s] = 0; cellTypes[lane][s] = 'normal'; }
-    cells[lane][step] = span;
-    cellTypes[lane][step] = noteType || 'normal';
+    for(let s=step; s<step+span; s++){ srcCells[lane][s] = 0; srcTypes[lane][s] = 'normal'; }
+    srcCells[lane][step] = span;
+    srcTypes[lane][step] = noteType || 'normal';
     playNote(lane, undefined, TYPE_BEND[noteType]);
   }else{
-    if(cells[lane][step] > 0){
-      pushHistory();
-      cells[lane][step] = 0;
-      cellTypes[lane][step] = 'normal';
+    if(srcCells[lane][step] > 0){
+      pushHist();
+      srcCells[lane][step] = 0;
+      srcTypes[lane][step] = 'normal';
     }else{
       // 노트 중간(가려진 칸) 위에서 지우기를 하면, 그 음의 시작 칸을 찾아서 지운다
       for(let k=1; k<MAX_DUR; k++){
         const s = step - k;
         if(s < 0) break;
-        if(cells[lane][s] > k){ pushHistory(); cells[lane][s] = 0; cellTypes[lane][s] = 'normal'; break; }
+        if(srcCells[lane][s] > k){ pushHist(); srcCells[lane][s] = 0; srcTypes[lane][s] = 'normal'; break; }
       }
     }
   }
-  refreshGrid();
+  refresh();
 }
 
 function refreshGrid(){
-  document.querySelectorAll('.cell').forEach(cellEl=>{
+  document.querySelectorAll('#grid .cell').forEach(cellEl=>{
     const lane = +cellEl.dataset.lane, step = +cellEl.dataset.step;
     const v = cells[lane][step];
     const type = cellTypes[lane][step];
@@ -1522,7 +1670,7 @@ function refreshGrid(){
     cellEl.style.display = ''; // 인라인 스타일을 비워서 CSS(.cell.on.tremolo 등의 display:flex 가운데 정렬)가 그대로 적용되게 함
   });
   // 긴 노트에 가려지는 뒤쪽 칸들은 숨긴다 (숨겨져도 grid-column-start는 그대로라 다른 칸에 영향 없음)
-  document.querySelectorAll('.cell').forEach(cellEl=>{
+  document.querySelectorAll('#grid .cell').forEach(cellEl=>{
     const lane = +cellEl.dataset.lane, step = +cellEl.dataset.step;
     for(let k=1; k<MAX_DUR; k++){
       const s = step - k;
@@ -1541,11 +1689,12 @@ function clearGrid(){
 }
 
 /* ---------- 순서 정렬 + 재생 ---------- */
-function buildOrderedSong(){
+function buildOrderedSong(srcCells, srcTypes){
+  srcCells = srcCells || cells; srcTypes = srcTypes || cellTypes; // 인자가 없으면 기존처럼 메인 그리드를 사용
   const events = [];
   for(let lane=0;lane<13;lane++){
     for(let step=0;step<STEPS;step++){
-      if(cells[lane][step] > 0){ events.push({ lane, step, durSteps: cells[lane][step], type: cellTypes[lane][step] }); }
+      if(srcCells[lane][step] > 0){ events.push({ lane, step, durSteps: srcCells[lane][step], type: srcTypes[lane][step] }); }
     }
   }
   events.sort((a,b)=> a.step - b.step);
@@ -2064,7 +2213,12 @@ function startTestPointerGesture(e, laneIndex, laneEl){
     const traveled = currentX - startX;
     const startedAwayFromLine = !isNearTestJudgeLine(startX);
     if(startedAwayFromLine && Math.abs(traveled) >= SWIPE_THRESHOLD_PX){
-      if(traveled > 0){
+      // 키보드 A/S/D를 누른 채로 슬라이드하면 슬라이드 방향과 무관하게 누르고 있는 키가 우선한다 (게임 화면과 동일)
+      let heldBend = aKeyDown ? 'semitone' : (sKeyDown ? 'semitone2' : (dKeyDown ? 'step' : null));
+      if(heldBend) heldBend = sanitizeBendForLane(laneIndex, heldBend);
+      if(heldBend){
+        bend = heldBend;
+      }else if(traveled > 0){
         bend = 'step';
       }else{
         // 직전에 '판정선 오른쪽을 빠르게 한 번 탭했다 뗀' 예약이 남아있고 B·F# 줄이면 반음+2 (게임 화면과 동일)
@@ -2396,6 +2550,435 @@ function closeTestPlay(){
   document.getElementById('testOverlay').classList.remove('show');
   document.getElementById('testStage').querySelectorAll('.test-note, .test-hit-pop').forEach(el=>el.remove());
 }
+
+/* ===================== 녹화 기능 =====================
+   REC이 켜져 있는(빨간) 동안 줄을 클릭/터치하거나 키보드(↑↓+스페이스바)로 연주하면,
+   누른 시점을 그대로 타이밍으로, 누르고 있던 길이를 그대로 음 길이로 삼아 블록이 만들어진다.
+   REC이 꺼져 있을 때(일시정지)는 그리드를 평소처럼 손으로 직접 고칠 수 있다. */
+const recCells = NOTES.map(()=>new Array(STEPS).fill(0));
+const recCellTypes = NOTES.map(()=>new Array(STEPS).fill('normal'));
+let recActive = false;
+let recElapsedMs = 0;       // 지금까지 누적된 녹화 시간(일시정지 동안은 안 늘어남)
+let recLastResumeAt = 0;
+let recRafId = null;
+let recPressState = {};     // lane(번호) -> { startMs, bend }  (지금 누르고 있는 중인 녹화 입력)
+let recKeyboardSelectedLane = null;
+let recSpaceHeld = false;
+let recLaneEls = [];
+
+function recCurrentElapsedMs(){
+  return recActive ? recElapsedMs + (performance.now() - recLastResumeAt) : recElapsedMs;
+}
+function recMsToStep(ms){
+  return Math.max(0, Math.round(ms / getStepMs()));
+}
+
+function openRecordModal(){
+  document.getElementById('recordModal').classList.add('show');
+  clearRecordingState(); // 녹화 창은 열 때마다 항상 빈 상태로 시작한다
+  buildRecGrid();
+  refreshRecGrid();
+  updateRecToggleUI();
+  updateRecStatusUI();
+  updateRecPlayheadPosition();
+}
+function closeRecordModal(){
+  if(recActive) toggleRec(); // 열어둔 채로 닫으면 자동으로 일시정지 처리
+  stopRecPlayback();
+  document.getElementById('recordModal').classList.remove('show');
+}
+function clearRecordingState(){
+  for(let lane=0; lane<13; lane++){ recCells[lane].fill(0); recCellTypes[lane].fill('normal'); }
+  recElapsedMs = 0;
+  recPressState = {};
+  recActive = false;
+  recKeyboardSelectedLane = null;
+  recSelectedCells.clear();
+  recLastSelectionAnchor = null;
+  recDragging = false; recMovingSelection = false;
+  recUndoStack = []; recRedoStack = [];
+  if(recRafId){ cancelAnimationFrame(recRafId); recRafId = null; }
+  stopRecPlayback();
+}
+function resetRecording(){
+  // 되돌릴 수 없는 작업이지만, 녹화 중 상태 초기화는 자주 쓰는 가벼운 동작이라
+  // (일부 환경에서 조용히 막히기도 하는) confirm() 팝업 대신 바로 실행하고 토스트로 알려준다.
+  clearRecordingState();
+  refreshRecGrid();
+  updateRecToggleUI();
+  updateRecStatusUI();
+  updateRecPlayheadPosition();
+  showEditorToast('녹화 내용을 초기화했어요.');
+}
+function applyRecording(){
+  if(recActive) toggleRec();
+  stopRecPlayback();
+  pushHistory();
+  for(let lane=0; lane<13; lane++){
+    cells[lane] = recCells[lane].slice();
+    cellTypes[lane] = recCellTypes[lane].slice();
+  }
+  refreshGrid();
+  document.getElementById('recordModal').classList.remove('show');
+  showEditorToast('녹화한 내용을 편집기로 옮겼어요!');
+}
+
+let recCountingDown = false;
+function toggleRec(){
+  if(recCountingDown) return; // 카운트다운 중에는 중복 클릭 무시
+  if(!recActive){
+    // 바로 시작하지 않고, 안내 문구를 1.5초 보여준 뒤에 실제로 녹화를 시작한다
+    recCountingDown = true;
+    stopRecPlayback(); // 재생 중이었다면 멈추고 녹화를 시작
+    const btn = document.getElementById('recToggleBtn');
+    if(btn) btn.textContent = '⏳ 곧 시작...';
+    const screen = document.getElementById('recCountdownScreen');
+    screen.classList.add('show');
+    setTimeout(()=>{
+      screen.classList.remove('show');
+      recCountingDown = false;
+      recActive = true;
+      recLastResumeAt = performance.now();
+      recRafId = requestAnimationFrame(recTick);
+      updateRecToggleUI();
+      updateRecStatusUI();
+    }, 1500);
+    return;
+  }
+  // 일시정지는 대기 없이 즉시
+  recActive = false;
+  recElapsedMs = recCurrentElapsedMs();
+  if(recRafId) cancelAnimationFrame(recRafId);
+  // 누르고 있던 입력이 있으면 지금 시점에서 그대로 확정한다
+  Object.keys(recPressState).forEach(laneStr => finalizeRecPress(Number(laneStr)));
+  document.querySelectorAll('.rec-lane-hit').forEach(el => el.classList.remove('active'));
+  updateRecToggleUI();
+  updateRecStatusUI();
+}
+function updateRecToggleUI(){
+  const btn = document.getElementById('recToggleBtn');
+  if(!btn) return;
+  btn.classList.toggle('recording', recActive);
+  btn.textContent = recActive ? '⏸ REC 중(누르면 일시정지)' : '🔴 REC';
+  document.querySelectorAll('.rec-lane-hit').forEach(el => el.classList.toggle('active', recActive));
+}
+function updateRecStatusUI(){
+  const statusEl = document.getElementById('recStatusText');
+  if(statusEl) statusEl.textContent = recActive ? '녹화 중...' : '일시정지';
+  const elEl = document.getElementById('recElapsedLabel');
+  if(elEl) elEl.textContent = (recCurrentElapsedMs()/1000).toFixed(1) + '초';
+}
+function recTick(){
+  if(!recActive) return;
+  updateRecStatusUI();
+  updateRecPlayheadPosition();
+  recRafId = requestAnimationFrame(recTick);
+}
+// 지금 녹화 위치(빨간 세로선)를 실시간으로 옮겨 그리고, 항상 화면에 보이도록 스크롤도 따라가게 한다
+// 음계(줄 이름)를 클릭해서 미리 골라두면, 녹화 시작 전이든 중이든 그 음부터 키보드(스페이스바)로 녹음할 수 있다
+function selectRecKeyboardLane(lane){
+  recKeyboardSelectedLane = lane;
+  recLaneEls.forEach((row,i)=>{ if(row) row.classList.toggle('keyboard-selected', i===lane); });
+}
+
+/* ---------- 녹화 창 전용 재생: 녹화 중이 아닐 때 스페이스바로 지금까지 녹음한 내용을 들어볼 수 있다 ---------- */
+let recPlayState = null;
+function toggleRecPlayback(){
+  if(recPlayState && !recPlayState.paused) pauseRecPlayback();
+  else if(recPlayState && recPlayState.paused) resumeRecPlayback();
+  else startRecPlaybackFrom(0);
+}
+function startRecPlaybackFrom(startStep){
+  stopRecPlayback();
+  const stepMs = getStepMs();
+  const events = buildOrderedSong(recCells, recCellTypes).filter(ev => ev.step >= startStep).map(ev => ({...ev, playedAt:null}));
+  if(events.length === 0) return;
+  const totalSteps = events.reduce((max, ev) => Math.max(max, ev.step + ev.durSteps), startStep);
+  recPlayState = {
+    events, startStep, stepMs,
+    totalMs: (totalSteps - startStep) * stepMs,
+    elapsedMs: 0, paused: false, lastFrameTime: performance.now(), rafId: null,
+    tremoloTimeouts: []
+  };
+  recPlayState.rafId = requestAnimationFrame(recPlaybackFrame);
+}
+function recPlaybackFrame(now){
+  if(!recPlayState || recPlayState.paused) return;
+  const dt = now - recPlayState.lastFrameTime;
+  recPlayState.lastFrameTime = now;
+  recPlayState.elapsedMs += dt;
+  recPlayState.events.forEach(ev=>{
+    if(ev.playedAt === null){
+      const dueMs = (ev.step - recPlayState.startStep) * recPlayState.stepMs;
+      if(recPlayState.elapsedMs >= dueMs){
+        ev.playedAt = recPlayState.elapsedMs;
+        const bend = TYPE_BEND[ev.type];
+        const hasTremolo = ev.type === 'tremolo' || ev.type === 'semitone-tremolo' || ev.type === 'semitone2-tremolo' || ev.type === 'step-tremolo';
+        if(hasTremolo){
+          const durationMs = ev.durSteps * recPlayState.stepMs;
+          const tickCount = Math.max(1, Math.round(durationMs / 55));
+          for(let i=0;i<tickCount;i++){
+            const tid = setTimeout(()=> playNote(ev.lane, undefined, bend), i*55);
+            recPlayState.tremoloTimeouts.push(tid);
+          }
+        }else{
+          playNote(ev.lane, undefined, bend);
+        }
+      }
+    }
+  });
+  const stepPos = recPlayState.startStep + recPlayState.elapsedMs / recPlayState.stepMs;
+  const playhead = document.getElementById('recPlayhead');
+  if(playhead){ playhead.style.left = stepToX(stepPos) + 'px'; playhead.style.display = 'block'; }
+  if(recPlayState.elapsedMs >= recPlayState.totalMs){ stopRecPlayback(); return; }
+  recPlayState.rafId = requestAnimationFrame(recPlaybackFrame);
+}
+function pauseRecPlayback(){
+  if(!recPlayState || recPlayState.paused) return;
+  recPlayState.paused = true;
+  if(recPlayState.rafId) cancelAnimationFrame(recPlayState.rafId);
+  recPlayState.tremoloTimeouts.forEach(tid=>clearTimeout(tid));
+  recPlayState.tremoloTimeouts = [];
+}
+function resumeRecPlayback(){
+  if(!recPlayState || !recPlayState.paused) return;
+  recPlayState.paused = false;
+  recPlayState.lastFrameTime = performance.now();
+  recPlayState.rafId = requestAnimationFrame(recPlaybackFrame);
+}
+function stopRecPlayback(){
+  if(recPlayState){
+    if(recPlayState.rafId) cancelAnimationFrame(recPlayState.rafId);
+    if(recPlayState.tremoloTimeouts) recPlayState.tremoloTimeouts.forEach(tid=>clearTimeout(tid));
+  }
+  recPlayState = null;
+  updateRecPlayheadPosition(); // 녹화 위치 표시로 되돌림
+}
+
+function updateRecPlayheadPosition(){
+  const playhead = document.getElementById('recPlayhead');
+  if(!playhead) return;
+  const step = recMsToStep(recCurrentElapsedMs());
+  const x = stepToX(step);
+  playhead.style.left = x + 'px';
+  playhead.style.display = 'block';
+  const wrap = document.getElementById('recGridWrap');
+  if(wrap && recActive){
+    const visibleLeft = wrap.scrollLeft, visibleRight = visibleLeft + wrap.clientWidth;
+    if(x < visibleLeft + 20 || x > visibleRight - 40){
+      wrap.scrollLeft = Math.max(0, x - wrap.clientWidth * 0.3);
+    }
+  }
+}
+// 눈금 줄을 클릭하면, 녹화 위치 자체를 그 지점으로 옮길 수 있다 (메인 그리드의 재생 시작 지점 클릭과 동일한 방식)
+function seekRecordingPosition(step){
+  recElapsedMs = step * getStepMs();
+  if(recActive) recLastResumeAt = performance.now(); // 지금 이 순간부터 새 위치를 기준으로 이어서 진행
+  updateRecPlayheadPosition();
+  updateRecStatusUI();
+}
+
+// 녹화 입력을 그대로 블록으로 바꿔서 그린다 (기존 그리드의 겹침 처리 방식과 동일하게, 겹치면 이전 것을 덮어씀)
+function paintRecCell(lane, step, span, noteType){
+  if(step >= STEPS) return;
+  span = Math.max(1, Math.min(span, MAX_DUR, STEPS - step));
+  if(noteType && noteType.startsWith('semitone2') && !SEMITONE2_LANES.has(lane)){
+    noteType = noteType.replace('semitone2', 'semitone');
+  }
+  for(let s=step; s<step+span; s++){ recCells[lane][s] = 0; recCellTypes[lane][s] = 'normal'; }
+  recCells[lane][step] = span;
+  recCellTypes[lane][step] = noteType || 'normal';
+  refreshRecGrid();
+}
+function startRecPress(lane){
+  if(recPressState[lane]) return; // 이미 누르고 있는 중이면 무시(중복 입력 방지)
+  let bend = aKeyDown ? 'semitone' : (sKeyDown ? 'semitone2' : (dKeyDown ? 'step' : null));
+  if(bend) bend = sanitizeBendForLane(lane, bend);
+  recPressState[lane] = { startMs: recCurrentElapsedMs(), bend };
+  playNote(lane, undefined, bend);
+}
+function finalizeRecPress(lane){
+  const press = recPressState[lane];
+  if(!press) return;
+  delete recPressState[lane];
+  const startStep = recMsToStep(press.startMs);
+  const durationMs = recCurrentElapsedMs() - press.startMs;
+  const span = Math.max(1, recMsToStep(durationMs) || 1);
+  const isTremolo = shiftKeyDown && durationMs >= 80; // 게임 화면과 동일한 Shift+꾹 누르기 기준
+  const type = composeNoteType(press.bend || 'none', isTremolo);
+  paintRecCell(lane, startStep, span, type);
+}
+
+function buildRecGrid(){
+  const grid = document.getElementById('recGrid');
+  grid.querySelectorAll('.row').forEach(el=>el.remove()); // 플레이헤드는 그대로 두고 줄만 다시 만든다
+  recLaneEls = [];
+
+  // 녹화 위치를 직접 클릭해서 옮길 수 있는 눈금 줄 (메인 그리드의 재생 눈금과 동일한 방식)
+  const ruler = document.createElement('div');
+  ruler.className = 'row ruler-row';
+  const rulerLabel = document.createElement('div');
+  rulerLabel.className = 'row-label';
+  rulerLabel.textContent = '🔴';
+  ruler.appendChild(rulerLabel);
+  const rulerCells = document.createElement('div');
+  rulerCells.className = 'ruler-cells';
+  for(let step=0; step<STEPS; step++){
+    const rc = document.createElement('div');
+    rc.className = 'ruler-cell' + (step % BEAT_GROUP_STEPS === 0 ? ' beat0' : '');
+    rc.style.gridColumnStart = step + 1;
+    rc.title = '여기로 녹화 위치 이동';
+    rc.addEventListener('click', ()=> seekRecordingPosition(step));
+    rulerCells.appendChild(rc);
+  }
+  ruler.appendChild(rulerCells);
+  grid.appendChild(ruler);
+
+  for(let lane=0; lane<13; lane++){
+    const row = document.createElement('div');
+    row.className = 'row' + (TEAL_LANES.has(lane) ? ' teal' : '');
+    const label = document.createElement('div');
+    label.className = 'row-label';
+    label.textContent = NOTES[lane];
+    label.style.cursor = 'pointer';
+    label.title = '클릭하면 이 음에서부터 키보드로 녹음할 수 있어요';
+    label.addEventListener('click', ()=> selectRecKeyboardLane(lane));
+    row.appendChild(label);
+    const cellsWrap = document.createElement('div');
+    cellsWrap.className = 'row-cells';
+    for(let step=0; step<STEPS; step++){
+      const cell = document.createElement('div');
+      cell.className = 'cell' + (step % BEAT_GROUP_STEPS === 0 ? ' beat0' : '');
+      cell.style.gridColumnStart = step + 1;
+      cell.dataset.lane = lane; cell.dataset.step = step;
+      cell.addEventListener('mousedown', (e)=>{
+        if(recActive) return; // 녹화 중엔 레인 전체 오버레이가 처리하므로 칸 단위 클릭은 무시
+        e.preventDefault();
+        if(e.button !== 0 && e.button !== 2) return;
+        if(e.button === 0 && (e.ctrlKey || e.metaKey)){
+          toggleSelectCell(lane, step, recCells, recSelectedCells, refreshRecGrid); // Ctrl+클릭: 다중 선택
+          const s = findNoteStart(lane, step, recCells);
+          if(s !== -1) recLastSelectionAnchor = { lane, step: s };
+          return;
+        }
+        if(e.button === 0 && e.shiftKey){
+          const s = findNoteStart(lane, step, recCells);
+          if(s !== -1 && recLastSelectionAnchor){
+            selectRange(recLastSelectionAnchor, { lane, step: s }, recCells, recSelectedCells, refreshRecGrid);
+            recLastSelectionAnchor = { lane, step: s };
+            return;
+          }
+        }
+        if(e.button === 0){
+          const startStep = findNoteStart(lane, step, recCells);
+          if(startStep !== -1){
+            if(!recSelectedCells.has(cellKey(lane, startStep))){
+              recSelectedCells.clear();
+              recSelectedCells.add(cellKey(lane, startStep));
+              refreshRecGrid();
+            }
+            recLastSelectionAnchor = { lane, step: startStep };
+            recMovingSelection = true;
+            recMoveAnchorLane = lane;
+            recMoveAnchorStep = startStep;
+            return;
+          }
+        }
+        if(recSelectedCells.size > 0){ recSelectedCells.clear(); refreshRecGrid(); }
+        recDragging = true;
+        recDragAdding = (e.button === 0);
+        recDragType = resolveNoteType(e.shiftKey, lane);
+        paintCell(lane, step, recDragAdding, recDragType, recCells, recCellTypes, recPushHistory, refreshRecGrid);
+      });
+      cell.addEventListener('mouseenter', ()=>{
+        if(recActive) return;
+        if(recMovingSelection){
+          const deltaLane = lane - recMoveAnchorLane;
+          const deltaStep = step - recMoveAnchorStep;
+          if(deltaLane !== 0 || deltaStep !== 0){
+            const moved = moveSelectedNotes(deltaLane, deltaStep, recSelectedCells, recCells, recCellTypes, recPushHistory, refreshRecGrid);
+            if(moved){ recMoveAnchorLane = lane; recMoveAnchorStep = step; }
+          }
+          return;
+        }
+        if(recDragging) paintCell(lane, step, recDragAdding, recDragType, recCells, recCellTypes, recPushHistory, refreshRecGrid);
+      });
+      cellsWrap.appendChild(cell);
+    }
+    row.appendChild(cellsWrap);
+    // 녹화 중일 때만 활성화되는, 레인 전체를 덮는 입력 오버레이 (칸 위치와 무관하게 '지금 이 순간'을 기록)
+    const hitOverlay = document.createElement('div');
+    hitOverlay.className = 'rec-lane-hit';
+    hitOverlay.addEventListener('pointerdown', (e)=>{
+      e.preventDefault();
+      try{ hitOverlay.setPointerCapture(e.pointerId); }catch(err){}
+      startRecPress(lane);
+    });
+    hitOverlay.addEventListener('pointerup', ()=> finalizeRecPress(lane));
+    hitOverlay.addEventListener('pointercancel', ()=> finalizeRecPress(lane));
+    row.appendChild(hitOverlay);
+    grid.appendChild(row);
+    recLaneEls[lane] = row;
+  }
+}
+// 일시정지 중 손으로 직접 고치는 간단 편집(클릭=칠하기/지우기). 툴바의 현재 음 길이·반음 설정을 그대로 따른다.
+function refreshRecGrid(){
+  document.querySelectorAll('#recGrid .cell').forEach(cellEl=>{
+    const lane = +cellEl.dataset.lane, step = +cellEl.dataset.step;
+    const v = recCells[lane][step];
+    const type = recCellTypes[lane][step];
+    const isOn = v > 0;
+    cellEl.classList.toggle('on', isOn);
+    cellEl.style.gridColumnEnd = 'span ' + Math.max(1, v);
+    const hasTremolo = type === 'tremolo' || type === 'semitone-tremolo' || type === 'semitone2-tremolo' || type === 'step-tremolo';
+    const hasSemitone = type === 'semitone' || type === 'semitone-tremolo';
+    const hasSemitone2 = type === 'semitone2' || type === 'semitone2-tremolo';
+    const hasStep = type === 'step' || type === 'step-tremolo';
+    cellEl.classList.toggle('tremolo', isOn && hasTremolo);
+    cellEl.classList.toggle('semitone', isOn && hasSemitone);
+    cellEl.classList.toggle('semitone2', isOn && hasSemitone2);
+    cellEl.classList.toggle('step', isOn && hasStep);
+    cellEl.classList.toggle('selected', isOn && recSelectedCells.has(cellKey(lane, step)));
+    cellEl.textContent = (isOn && TYPE_MARK[type]) ? TYPE_MARK[type] : '';
+    cellEl.style.display = '';
+  });
+  document.querySelectorAll('#recGrid .cell').forEach(cellEl=>{
+    const lane = +cellEl.dataset.lane, step = +cellEl.dataset.step;
+    for(let k=1; k<MAX_DUR; k++){
+      const s = step - k;
+      if(s < 0) break;
+      if(recCells[lane][s] > k){ cellEl.style.display = 'none'; break; }
+    }
+  });
+}
+
+// 녹화 창이 열려 있을 때: 게임 화면과 동일한 ↑/↓(현 선택) + 스페이스바(누르는 동안 녹화)
+window.addEventListener('keydown', (e)=>{
+  if(!document.getElementById('recordModal').classList.contains('show')) return;
+  if(e.key === 'ArrowUp' || e.key === 'ArrowDown'){
+    e.preventDefault();
+    const base = recKeyboardSelectedLane === null ? 6 : recKeyboardSelectedLane;
+    selectRecKeyboardLane(recKeyboardSelectedLane === null ? 6 : Math.max(0, Math.min(12, base + (e.key==='ArrowUp'?-1:1))));
+  }
+  if(e.code === 'Space'){
+    e.preventDefault();
+    if(recActive){
+      if(!recSpaceHeld && recKeyboardSelectedLane !== null){
+        recSpaceHeld = true;
+        startRecPress(recKeyboardSelectedLane);
+      }
+    }else if(!recCountingDown){
+      // 녹화 중이 아닐 때 스페이스바는 지금까지 녹화된 내용을 재생/일시정지하는 용도
+      toggleRecPlayback();
+    }
+  }
+});
+window.addEventListener('keyup', (e)=>{
+  if(e.code === 'Space' && recSpaceHeld){
+    recSpaceHeld = false;
+    if(recKeyboardSelectedLane !== null) finalizeRecPress(recKeyboardSelectedLane);
+  }
+});
 
 </script>
 </body>
