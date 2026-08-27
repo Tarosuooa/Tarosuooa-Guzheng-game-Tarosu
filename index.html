@@ -837,12 +837,23 @@ function resolveBendFallback(laneIndex){
   return null;
 }
 let aKeyDown = false, sKeyDown = false, dKeyDown = false, shiftKeyDown = false;
+// 현재 포커스가 텍스트를 입력할 수 있는 곳(입력창, textarea, 편집 가능한 글자 영역)인지 확인.
+// 이걸 확인 안 하면, 조작법/사이트 문구를 편집하다가 스페이스바나 화살표 키를 눌렀을 때
+// 그게 다음 줄 이동/띄어쓰기가 아니라 게임 조작(현 선택, 연주)으로 가로채져 버린다.
+function isTypingContext(target){
+  if(!target) return false;
+  const tag = (target.tagName || '').toLowerCase();
+  if(tag === 'input' || tag === 'textarea') return true;
+  return !!target.isContentEditable;
+}
 window.addEventListener('keydown', (e)=>{
   const k = e.key.toLowerCase();
-  if(k==='a') aKeyDown = true;
-  if(k==='s') sKeyDown = true;
-  if(k==='d') dKeyDown = true;
-  if(e.key === 'Shift') shiftKeyDown = true;
+  const typing = isTypingContext(e.target);
+  if(k==='a' && !typing) aKeyDown = true;
+  if(k==='s' && !typing) sKeyDown = true;
+  if(k==='d' && !typing) dKeyDown = true;
+  if(e.key === 'Shift' && !typing) shiftKeyDown = true;
+  if(typing) return; // 텍스트 입력 중이면 아래의 게임 조작 단축키들을 건드리지 않는다
   if(e.key === 'ArrowUp' || e.key === 'ArrowDown'){
     e.preventDefault();
     moveKeyboardSelection(e.key === 'ArrowUp' ? -1 : 1);
