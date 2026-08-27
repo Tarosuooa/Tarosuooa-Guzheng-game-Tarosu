@@ -80,6 +80,13 @@ h1{
   z-index:5; touch-action:none;
 }
 .lane.flash{ background:rgba(220,181,106,0.18); }
+/* 키보드(↑↓)로 현재 선택 중인 줄을 표시하는 마크: 계이름 글자와 겹치지 않도록 현(줄) 위쪽에 놓는다 */
+.lane.keyboard-selected::before{
+  content:''; position:absolute; left:40px; top:0; bottom:0; width:6px;
+  background:var(--gold-bright); box-shadow:0 0 8px 1px rgba(220,181,106,0.8);
+  z-index:7; pointer-events:none;
+}
+.lane.keyboard-selected .lane-label{ color:var(--gold-bright); font-weight:800; }
 
 /* 세로로 긴 연주(판정) 선 */
 .judge-line{
@@ -185,11 +192,13 @@ h1{
 .pause-overlay.show{ display:flex; }
 
 /* ---------- 모바일: 자동 가로 모드 + 반투명 가상 패드(A/S) ---------- */
-.mobile-pad{ display:none; position:fixed; left:14px; bottom:14px; z-index:80; gap:14px; }
+.mobile-pad{ display:none; position:fixed; left:14px; bottom:14px; right:14px; z-index:80; flex-wrap:wrap; gap:14px; }
 .pad-btn{
   width:72px; height:72px; border-radius:50%; border:2px solid rgba(255,255,255,0.55);
   background:rgba(35,29,23,0.35); color:#fff; font-size:24px; font-weight:800;
-  display:flex; align-items:center; justify-content:center; user-select:none; touch-action:none;
+  display:flex; align-items:center; justify-content:center;
+  user-select:none; -webkit-user-select:none; -moz-user-select:none; -ms-user-select:none;
+  touch-action:none;
   -webkit-tap-highlight-color:transparent; -webkit-touch-callout:none;
 }
 .pad-btn.active{ background:rgba(184,144,63,0.65); border-color:var(--gold-bright); }
@@ -197,6 +206,8 @@ h1{
 #padA.active{ background:rgba(61,127,224,0.75); border-color:#3d7fe0; }
 #padS.active{ background:rgba(138,79,209,0.75); border-color:#8a4fd1; }
 #padD.active{ background:rgba(224,69,63,0.75); border-color:#e0453f; }
+.pad-btn-tremolo{ font-size:16px; }
+#padTremolo.active{ background:rgba(220,181,106,0.75); border-color:var(--gold-bright); }
 
 /* 반음(A)/한 키(S) 적용 시 클릭·터치 지점에 뜨는 터지는 이펙트 */
 .tap-burst{
@@ -366,7 +377,7 @@ h1{
 </div>
 
 <h1 id="pageTitle">타로당 13현 고쟁 GAME</h1>
-<p class="sub">계이름 점이 오른쪽 세로선에 닿는 순간, 그 줄을 터치하세요.<br>반음 UP = 키보드 A + 클릭<br>반음 UP+2(B·F#현 전용) = 키보드 S + 클릭<br>한 키 UP = 키보드 D + 클릭<br>트레몰로 = 꾹 누르기</p>
+<p class="sub">계이름 점이 오른쪽 세로선에 닿는 순간, 그 줄을 터치하세요.<br>반음 UP = 키보드 A + 클릭<br>반음 UP+2(B·F#현 전용) = 키보드 S + 클릭<br>한 키 UP = 키보드 D + 클릭<br>트레몰로 = Shift + 꾹 누르기 (모바일은 ///버튼 누른 채 꾹 누르기)</p>
 
 <div class="hud">
   <div>점수 <b id="scoreEl">0</b></div>
@@ -825,20 +836,66 @@ function resolveBendFallback(laneIndex){
   if(dKeyDown) return 'step';
   return null;
 }
-let aKeyDown = false, sKeyDown = false, dKeyDown = false;
+let aKeyDown = false, sKeyDown = false, dKeyDown = false, shiftKeyDown = false;
 window.addEventListener('keydown', (e)=>{
   const k = e.key.toLowerCase();
   if(k==='a') aKeyDown = true;
   if(k==='s') sKeyDown = true;
   if(k==='d') dKeyDown = true;
+  if(e.key === 'Shift') shiftKeyDown = true;
+  if(e.key === 'ArrowUp' || e.key === 'ArrowDown'){
+    e.preventDefault();
+    moveKeyboardSelection(e.key === 'ArrowUp' ? -1 : 1);
+  }
+  if(e.code === 'Space'){
+    e.preventDefault();
+    if(!spaceHeld){
+      spaceHeld = true;
+      plinkKeyboardSelectedLane();
+    }
+  }
 });
 window.addEventListener('keyup', (e)=>{
   const k = e.key.toLowerCase();
   if(k==='a') aKeyDown = false;
   if(k==='s') sKeyDown = false;
   if(k==='d') dKeyDown = false;
+  if(e.key === 'Shift') shiftKeyDown = false;
+  if(e.code === 'Space'){
+    spaceHeld = false;
+    stopTremolo();
+  }
 });
-window.addEventListener('blur', ()=>{ aKeyDown=false; sKeyDown=false; dKeyDown=false; });
+window.addEventListener('blur', ()=>{ aKeyDown=false; sKeyDown=false; dKeyDown=false; shiftKeyDown=false; spaceHeld=false; });
+
+/* ---------- 키보드(↑↓ + 스페이스바)로 현을 뜯는 조작 ----------
+   ↑/↓를 한 번이라도 누르면 처음엔 B4(레인6)를 가리키고, 그 다음부터는 위/아래로 한 칸씩 옮겨간다.
+   스페이스바를 누르면 지금 가리키고 있는 현을 실제로 뜯는다(꾹 누르고 있으면 트레몰로도 동일하게 동작). */
+let keyboardSelectedLane = null;
+let spaceHeld = false;
+function moveKeyboardSelection(direction){
+  if(keyboardSelectedLane === null){
+    keyboardSelectedLane = 6; // B4 — 처음 누르면 항상 여기서 시작
+  }else{
+    keyboardSelectedLane = Math.max(0, Math.min(12, keyboardSelectedLane + direction));
+  }
+  updateKeyboardSelectionMarker();
+}
+function updateKeyboardSelectionMarker(){
+  laneEls.forEach((lane, i)=>{
+    if(lane) lane.classList.toggle('keyboard-selected', i === keyboardSelectedLane);
+  });
+}
+function plinkKeyboardSelectedLane(){
+  if(keyboardSelectedLane === null) return; // 아직 ↑/↓로 현을 고른 적이 없으면 스페이스바만으론 아무 일도 안 함
+  const laneEl = laneEls[keyboardSelectedLane];
+  if(!laneEl) return;
+  const stageRect = stage.getBoundingClientRect();
+  const laneH = stageRect.height / 13;
+  const coords = { x: judgeLineX(), y: stageRect.top + laneH * (keyboardSelectedLane + 0.5) };
+  onLaneTap(keyboardSelectedLane, laneEl, false, undefined, coords);
+  if(shiftKeyDown) beginTremolo(keyboardSelectedLane, laneEl); // Shift를 누른 채 스페이스바를 눌러야만 트레몰로가 걸림
+}
 
 /* ===================== 기본 곡 =====================
    서버(Firestore)에서 '아리랑'을 불러오기 전까지 잠깐 쓰이는 빈 값.
@@ -967,7 +1024,7 @@ function startPointerGesture(e, laneIndex, laneEl){
       onLaneTap(laneIndex, laneEl, false, bend, {x:currentX, y:currentY});
     }else{
       onLaneTap(laneIndex, laneEl, false, undefined, {x:currentX, y:currentY}); // 그냥 판정선을 탭 — 기존처럼 가상 패드(A/S)를 누르고 있는 상태를 그대로 따름
-      beginTremolo(laneIndex, laneEl);
+      if(shiftKeyDown) beginTremolo(laneIndex, laneEl); // Shift(또는 모바일 '///' 버튼)를 누른 채 꾹 눌러야만 트레몰로가 걸림
     }
     startDragGlide(pointerId, laneIndex);
   }
@@ -1766,7 +1823,7 @@ const HOWTO_DEFAULTS = [
   { id:'howto2', name:'반음 UP (A)', gif:'', desc:'키보드 A를 누른 채 클릭하거나, 판정선 오른쪽 바깥에서 왼쪽(판정선 방향)으로 슬라이드하면 반음이 올라가요.' },
   { id:'howto2b', name:'반음 UP+2 (S)', gif:'', desc:'B·F#현에서만 가능해요. 키보드 S를 누른 채 클릭하거나, 판정선 오른쪽을 빠르게 한 번 터치했다 뗀 뒤 바로 이어서 판정선으로 슬라이드하면 반음이 2단계 올라가요.' },
   { id:'howto3', name:'한 키 UP (D)', gif:'', desc:'키보드 D를 누른 채 클릭하거나, 판정선 왼쪽 바깥에서 오른쪽(판정선 방향)으로 슬라이드하면 한 키가 올라가요.' },
-  { id:'howto4', name:'트레몰로', gif:'', desc:'줄을 꾹 누르고 있으면 빠르게 반복 연주돼요.' },
+  { id:'howto4', name:'트레몰로', gif:'', desc:'Shift를 누른 채 줄을 꾹 누르고 있거나, Shift를 누른 채 스페이스바를 꾹 누르면 빠르게 반복 연주돼요. 모바일에서는 ///버튼을 누른 채로 줄을 꾹 눌러주세요.' },
 ];
 function loadHowtoOverrides(){
   try{ const raw = localStorage.getItem(HOWTO_STORE_KEY); return raw ? JSON.parse(raw) : null; }catch(e){ return null; }
@@ -1898,6 +1955,7 @@ document.getElementById('leaderboardModal').addEventListener('click', (e)=>{ if(
   <div class="pad-btn" id="padA">A</div>
   <div class="pad-btn" id="padS">S</div>
   <div class="pad-btn" id="padD">D</div>
+  <div class="pad-btn pad-btn-tremolo" id="padTremolo">///</div>
 </div>
 
 </div><!-- /#rotateWrapper -->
@@ -1927,10 +1985,15 @@ function bindPadBtn(el, setDown){
   el.addEventListener('pointerdown', down);
   el.addEventListener('pointerup', up);
   el.addEventListener('pointercancel', up);
+  // 일부 모바일 브라우저는 CSS(user-select/touch-callout)만으로는 길게 눌렀을 때 뜨는
+  // '텍스트 선택 → 웹 검색/찾기' 팝업을 완전히 못 막아서, 관련 이벤트를 직접 한 번 더 막아준다.
+  el.addEventListener('contextmenu', e => e.preventDefault());
+  el.addEventListener('selectstart', e => e.preventDefault());
 }
 bindPadBtn(document.getElementById('padA'), v=>{ aKeyDown = v; });
 bindPadBtn(document.getElementById('padS'), v=>{ sKeyDown = v; });
 bindPadBtn(document.getElementById('padD'), v=>{ dKeyDown = v; });
+bindPadBtn(document.getElementById('padTremolo'), v=>{ shiftKeyDown = v; });
 </script>
 </body>
 </html>
