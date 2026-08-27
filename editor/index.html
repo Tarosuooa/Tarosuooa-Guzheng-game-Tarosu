@@ -960,7 +960,7 @@ window.addEventListener('keydown', (e)=>{
 window.addEventListener('keydown', (e)=>{
   const k = e.key.toLowerCase();
   const tag = (e.target.tagName||'').toLowerCase();
-  const typing = (tag==='input' || tag==='textarea') && !SPACEBAR_EXEMPT_IDS.has(e.target.id);
+  const typing = ((tag==='input' || tag==='textarea' || e.target.isContentEditable) && !SPACEBAR_EXEMPT_IDS.has(e.target.id));
 
   if(k==='a' && !(e.ctrlKey||e.metaKey) && !typing){
     aKeyDown = true;
@@ -979,7 +979,8 @@ window.addEventListener('keydown', (e)=>{
     if(!e.repeat) applyTremoloKeyToSelection();
   }
   // 테스트 플레이 창이 열려 있을 때만: 게임 화면과 동일한 ↑/↓(현 선택) + 스페이스바(뜯기) 조작
-  if(document.getElementById('testOverlay').classList.contains('show')){
+  // (텍스트 편집 중이면 이 블록도 건너뛴다 — 테스트 플레이 오버레이가 열려 있어도, 다른 곳의 글자 입력을 방해하면 안 됨)
+  if(!typing && document.getElementById('testOverlay').classList.contains('show')){
     if(e.key === 'ArrowUp' || e.key === 'ArrowDown'){
       e.preventDefault();
       moveTestKeyboardSelection(e.key === 'ArrowUp' ? -1 : 1);
@@ -2962,6 +2963,9 @@ function refreshRecGrid(){
 // 녹화 창이 열려 있을 때: 게임 화면과 동일한 ↑/↓(현 선택) + 스페이스바(누르는 동안 녹화)
 window.addEventListener('keydown', (e)=>{
   if(!document.getElementById('recordModal').classList.contains('show')) return;
+  // 녹화 창 안에서도(예: 관리자 텍스트 편집 등) 글자를 입력 중이면 이 단축키들을 건드리지 않는다
+  const tag = (e.target.tagName||'').toLowerCase();
+  if(tag==='input' || tag==='textarea' || e.target.isContentEditable) return;
   if(e.key === 'ArrowUp' || e.key === 'ArrowDown'){
     e.preventDefault();
     const base = recKeyboardSelectedLane === null ? 6 : recKeyboardSelectedLane;
