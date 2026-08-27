@@ -2811,6 +2811,7 @@ function finalizeRecPress(lane){
 
 function buildRecGrid(){
   const grid = document.getElementById('recGrid');
+  grid.addEventListener('contextmenu', e => e.preventDefault()); // 오른쪽 클릭 시 브라우저 메뉴가 뜨지 않게 함 (안 뜨면 지우기가 조용히 바로 적용됨)
   grid.querySelectorAll('.row').forEach(el=>el.remove()); // 플레이헤드는 그대로 두고 줄만 다시 만든다
   recLaneEls = [];
 
@@ -2841,8 +2842,14 @@ function buildRecGrid(){
     label.className = 'row-label';
     label.textContent = NOTES[lane];
     label.style.cursor = 'pointer';
-    label.title = '클릭하면 이 음에서부터 키보드로 녹음할 수 있어요';
-    label.addEventListener('click', ()=> selectRecKeyboardLane(lane));
+    label.title = '클릭하면 이 음을 미리 들어보고, 키보드로 녹음할 때 이 음부터 시작하게 골라둘 수 있어요';
+    label.addEventListener('click', ()=>{
+      selectRecKeyboardLane(lane);
+      // 메인 편집기와 동일하게, 계이름을 클릭하면 그 음을 미리 들어볼 수 있다 (A/S/D 반음도 반영)
+      let bend = aKeyDown ? 'semitone' : (sKeyDown ? 'semitone2' : (dKeyDown ? 'step' : undefined));
+      if(bend) bend = sanitizeBendForLane(lane, bend);
+      playNote(lane, undefined, bend);
+    });
     row.appendChild(label);
     const cellsWrap = document.createElement('div');
     cellsWrap.className = 'row-cells';
