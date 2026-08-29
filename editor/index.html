@@ -92,6 +92,15 @@ h1{ font-size:20px; color:var(--wood-deep); font-family:'Nanum Myeongjo',serif; 
 }
 .grid{ display:inline-block; position:relative; }
 .row{ display:flex; align-items:center; height:26px; position:relative; }
+/* 게임 화면과 동일하게, 칸이 보이는 격자가 아니라 실제 현이 지나가는 것처럼 보이도록 얇은 그라데이션 선을 깐다 */
+.row::before{
+  content:''; position:absolute; left:40px; right:0; top:50%; height:2px;
+  background:linear-gradient(90deg, rgba(220,181,106,0.15), rgba(220,181,106,0.55) 40%, rgba(220,181,106,0.55) 78%, rgba(220,181,106,0.15));
+  transform:translateY(-50%); z-index:0; pointer-events:none;
+}
+.row.teal::before{
+  background:linear-gradient(90deg, rgba(18,124,119,0.2), rgba(18,124,119,0.75) 40%, rgba(18,124,119,0.75) 78%, rgba(18,124,119,0.2));
+}
 .rec-lane-hit{
   position:absolute; left:40px; right:0; top:0; bottom:0; z-index:20;
   pointer-events:none; cursor:pointer; touch-action:none;
@@ -99,6 +108,38 @@ h1{ font-size:20px; color:var(--wood-deep); font-family:'Nanum Myeongjo',serif; 
 .rec-lane-hit.active{ pointer-events:auto; background:rgba(192,39,45,0.06); }
 #recGrid .row.keyboard-selected{ background:rgba(220,181,106,0.12); }
 #recGrid .row.keyboard-selected .row-label{ color:var(--gold-bright); font-weight:800; }
+/* 녹화 중일 때는 편집기 그리드 대신, 실제 게임 화면과 똑같은 모습으로 연주할 수 있게 한다 */
+.rec-game-stage{
+  display:none; position:relative; width:100%; height:min(60vh, 420px);
+  background-color:#3a2416; border-radius:6px; overflow:hidden; touch-action:none;
+}
+.rec-game-stage.show{ display:block; }
+.rec-game-lane{
+  position:absolute; left:0; right:0; height:calc(100% / 13);
+  border-bottom:1px solid rgba(220,181,106,0.12); display:flex; align-items:center; cursor:pointer;
+}
+.rec-game-lane:last-child{ border-bottom:none; }
+.rec-game-lane.flash{ background:rgba(220,181,106,0.18); }
+.rec-game-lane-string{
+  position:absolute; left:0; right:0; top:50%; height:2px;
+  background:linear-gradient(90deg, rgba(220,181,106,0.15), rgba(220,181,106,0.55) 40%, rgba(220,181,106,0.55) 78%, rgba(220,181,106,0.15));
+  transform:translateY(-50%); z-index:1; pointer-events:none;
+}
+.rec-game-lane-string.teal{
+  background:linear-gradient(90deg, rgba(18,124,119,0.2), rgba(18,124,119,0.75) 40%, rgba(18,124,119,0.75) 78%, rgba(18,124,119,0.2));
+}
+.rec-game-lane-label{
+  position:absolute; left:6px; font-size:10px; color:rgba(241,233,216,0.35);
+  font-family:'Noto Sans KR',sans-serif; pointer-events:none; z-index:2;
+}
+.rec-game-hit{ position:absolute; top:0; bottom:0; left:0; right:0; z-index:5; touch-action:none; }
+/* 게임 화면과 동일한 키보드(↑↓) 선택 표시 */
+.rec-game-lane.keyboard-selected::before{
+  content:''; position:absolute; left:40px; top:0; bottom:0; width:6px;
+  background:var(--gold-bright); box-shadow:0 0 8px 1px rgba(220,181,106,0.8);
+  z-index:7; pointer-events:none;
+}
+.rec-game-lane.keyboard-selected .rec-game-lane-label{ color:var(--gold-bright); font-weight:800; }
 .row-label{
   width:40px; flex:none; font-size:10.5px; color:rgba(241,233,216,0.55);
   font-family:'Noto Sans KR',sans-serif; text-align:right; padding-right:8px;
@@ -113,38 +154,47 @@ h1{ font-size:20px; color:var(--wood-deep); font-family:'Nanum Myeongjo',serif; 
    grid-column-start로 각 칸 위치를 고정하는 방식과 함께 쓴다 */
 .row-cells{ display:grid; grid-template-columns: repeat(16, 27px 22px 22px 22px 22px 22px 22px 22px 22px 22px 22px 22px 22px 22px 22px 22px); grid-auto-rows:22px; column-gap:2px; align-items:center; }
 .cell{
-  height:22px; border-radius:3px; /* 폭은 grid 트랙 크기를 그대로 따름 (span N일 때 여러 칸만큼 자동으로 늘어남) */
-  background:rgba(255,255,255,0.06); cursor:pointer; position:relative;
+  height:22px; cursor:pointer; position:relative;
   touch-action:manipulation; /* 더블탭 확대만 막고, 가로로 밀면 그리드가 정상적으로 스크롤되게 함 */
 }
-.cell:hover{ background:rgba(220,181,106,0.25); }
-.cell.on{ background:var(--gold-bright); }
+.cell:hover::after{
+  content:''; position:absolute; left:0; right:0; top:50%; height:14px;
+  background:rgba(220,181,106,0.18); border-radius:3px; transform:translateY(-50%); pointer-events:none;
+}
 .cell.beat0{ }
-.row.teal .cell.on{ background:#5bd6c9; }
 .row.teal .row-label{ color:#5bd6c9; }
 
 /* 재생 구간 시작점을 고르는 룰러 (그리드 맨 위, 그리드와 같이 가로 스크롤됨) */
 .ruler-row{ display:flex; align-items:center; height:14px; margin-bottom:3px; }
 .ruler-cells{ display:grid; grid-template-columns: repeat(16, 27px 22px 22px 22px 22px 22px 22px 22px 22px 22px 22px 22px 22px 22px 22px 22px); grid-auto-rows:10px; column-gap:2px; }
 .ruler-cell{
-  width:22px; height:10px; border-radius:2px;
-  background:rgba(255,255,255,0.06); cursor:pointer;
+  width:22px; height:10px; border-radius:2px; cursor:pointer;
 }
 .ruler-cell:hover{ background:rgba(255,255,255,0.18); }
 .ruler-cell.beat0{ }
 .ruler-cell.start-marker{ background:#ff5a5a; }
-/* 노트 표시: shift+클릭(또는 '트레몰로' 버튼)=///, a+클릭(또는 '반음 UP')=A, s+클릭(또는 '반음 UP+2')=S2, d+클릭(또는 '한 키 UP')=D
-   블록 색은 일반 노트와 동일하게 유지하고, 표시 글자만 블록보다 어두운 색으로 얹는다 */
-.cell.on.tremolo, .cell.on.semitone, .cell.on.semitone2, .cell.on.step{
-  display:flex; align-items:center; justify-content:center;
-  font-weight:800; letter-spacing:-1px; color:var(--wood-deep);
+/* 노트 표시: 실제 게임 화면처럼, 음은 넓은 블록이 아니라 시작 위치에 찍히는 작은 점(원)으로 표시한다.
+   (예전 데이터가 폭이 넓게(span>1) 저장되어 있어도, 화면에는 항상 시작 위치에 작은 점만 나타나게 해서
+   '화면에 보이는 폭'과 '실제로 저장되는 다음 음까지의 간격'이 서로 다른 의미로 오해되지 않게 한다.)
+   shift+클릭(또는 '트레몰로' 버튼)=///, a+클릭(또는 '반음 UP')=A, s+클릭(또는 '반음 UP+2')=S2, d+클릭(또는 '한 키 UP')=D
+   점 위에 표시 글자를 작게 얹는다(점보다 어두운 색). */
+.cell.on::before{
+  content:''; position:absolute; left:2px; top:50%; width:16px; height:16px;
+  border-radius:50%; background:var(--gold-bright); transform:translateY(-50%); z-index:0;
 }
-.cell.on.tremolo{ font-size:11px; }
-.cell.on.semitone, .cell.on.semitone2, .cell.on.step{ font-size:11px; }
-.cell.on.tremolo.semitone, .cell.on.tremolo.semitone2, .cell.on.tremolo.step{ font-size:9px; letter-spacing:-1.5px; }
-.row.teal .cell.on.tremolo, .row.teal .cell.on.semitone, .row.teal .cell.on.semitone2, .row.teal .cell.on.step{ color:#0a4a47; }
-/* Ctrl+클릭 다중 선택 표시 */
-.cell.selected{ outline:2px solid #4da6ff; outline-offset:-1px; cursor:grab; }
+.row.teal .cell.on::before{ background:#5bd6c9; }
+.cell.on{
+  display:flex; align-items:center;
+  font-weight:800; font-size:9px; letter-spacing:-1px; color:var(--wood-deep);
+  padding-left:2px;
+}
+.row.teal .cell.on{ color:#0a4a47; }
+.cell.on span.mark-text{ position:relative; z-index:1; }
+/* Ctrl+클릭 다중 선택 표시: 점 둘레에 파란 테두리 */
+.cell.selected::after{
+  content:''; position:absolute; left:0px; top:50%; width:20px; height:20px;
+  border-radius:50%; border:2px solid #4da6ff; transform:translateY(-50%); z-index:2; pointer-events:none;
+}
 
 /* '편집 완료' 시 곡 정보를 입력하는 모달 */
 .modal-overlay{
@@ -384,7 +434,7 @@ textarea#exportBox{
     <div class="edit-toolbar-body" id="editToolbarBody">
       <div class="edit-toolbar-row">
         <label>BPM <input type="number" id="bpmInput" value="100" min="40" max="220"></label>
-        <span style="color:var(--ink-soft); font-size:12.5px;">음 길이:</span>
+        <span style="color:var(--ink-soft); font-size:12.5px;" title="선택한 음을 ◀▶로 옮길 때 이동하는 간격이에요 (음은 항상 점으로 찍히고, 다음 음까지의 거리로 박자가 정해져요)">이동 간격:</span>
         <button class="dur-btn" data-dur="1" onclick="setDuration(1, this)">0.25박</button>
         <button class="dur-btn" data-dur="2" onclick="setDuration(2, this)">0.5박</button>
         <button class="dur-btn" data-dur="3" onclick="setDuration(3, this)">0.75박</button>
@@ -489,15 +539,23 @@ textarea#exportBox{
       <button class="modal-close" onclick="closeRecordModal()">✕</button>
     </div>
     <p class="modal-sub">🔴 REC을 누르면 빨갛게 바뀌면서 녹화가 시작돼요. 그 상태에서 아래 줄을 클릭/터치하거나(A/S/D+클릭, Shift+꾹 누르기도 동일하게 적용) 키보드 ↑↓+스페이스바로 연주하면, 누른 시점과 길이 그대로 블록이 만들어져요. 다시 누르면 일시정지예요. 녹화 중이 아니어도 아래 그리드는 직접 클릭해서 블록을 고칠 수 있어요.</p>
-    <div style="display:flex; align-items:center; gap:12px; margin:10px 0;">
+    <div style="display:flex; align-items:center; gap:12px; margin:10px 0; flex-wrap:wrap;">
       <button class="btn" id="recToggleBtn" onclick="toggleRec()" style="border-radius:24px; padding:10px 28px; font-weight:800;">🔴 REC</button>
       <span id="recStatusText" style="font-size:12.5px; color:var(--ink-soft);">대기 중</span>
+      <label style="display:flex; align-items:center; gap:5px; font-size:12.5px; color:var(--ink-soft);" title="녹화 중에는 조절할 수 없어요">
+        🔊 <input type="range" id="recVolumeSlider" min="0" max="100" value="20" step="1" oninput="setVolume(this.value)" style="width:80px; vertical-align:middle;">
+        <span id="recVolumeLabel" style="min-width:30px; display:inline-block;">20%</span>
+      </label>
+      <label style="display:flex; align-items:center; gap:5px; font-size:12.5px; color:var(--ink-soft);" title="녹화 중 박자를 맞출 수 있게 똑딱이 소리를 재생해요">
+        <input type="checkbox" id="recMetronomeToggle" checked style="cursor:pointer;"> 🎵 메트로놈
+      </label>
       <span style="margin-left:auto; font-size:12.5px; color:var(--ink-soft);">녹화 길이: <b id="recElapsedLabel">0.0초</b></span>
     </div>
     <div class="grid-wrap" id="recGridWrap" style="max-height:340px; overflow-y:auto; position:relative;">
       <div class="grid" id="recGrid"><div class="rec-playhead" id="recPlayhead"></div></div>
       <div class="countdown-screen" id="recCountdownScreen"><div id="recCountdownText" style="font-family:'Nanum Myeongjo',serif; font-size:22px; font-weight:800; color:var(--gold-bright); text-shadow:0 0 24px rgba(220,181,106,0.8); text-align:center; padding:0 20px;">잠시 후 녹화가 시작됩니다</div></div>
     </div>
+    <div class="rec-game-stage" id="recGameStage"></div>
     <div class="modal-actions-row" style="margin-top:12px;">
       <button class="btn small ghost" onclick="resetRecording()">초기화</button>
       <button class="btn small" onclick="applyRecording()">✅ 적용(편집기로 옮기기)</button>
@@ -640,7 +698,7 @@ const EDITABLE_SELECTOR = 'h1, .sub, .guide, .modal-box label, .modal-head h2, .
 const NON_EDITABLE_IDS = new Set([
   'testScore','testCombo','testJudgment','editBannerText','authStatus',
   'testCountdownNum','testFinalScore','testFinalCombo',
-  'playBtn','textEditToggleBtn','recToggleBtn','recStatusText','recElapsedLabel'
+  'playBtn','textEditToggleBtn','recToggleBtn','recStatusText','recElapsedLabel','recVolumeLabel'
 ]);
 
 function getEditableTextElements(){
@@ -802,6 +860,13 @@ let masterVolume = 0.2; // 볼륨 슬라이더 기본값 20%
 function setVolume(v){
   masterVolume = Math.max(0, Math.min(100, Number(v)||0)) / 100;
   document.getElementById('volumeLabel').textContent = v + '%';
+  // 메인 툴바와 녹화 창 슬라이더 둘 중 어느 쪽을 조작하든 서로 항상 같은 값을 보여주게 동기화한다
+  const mainSlider = document.getElementById('volumeSlider');
+  const recSlider = document.getElementById('recVolumeSlider');
+  const recLabel = document.getElementById('recVolumeLabel');
+  if(mainSlider && mainSlider.value != v) mainSlider.value = v;
+  if(recSlider && recSlider.value != v) recSlider.value = v;
+  if(recLabel) recLabel.textContent = v + '%';
 }
 function dampingForFreq(f){ return Math.pow(REF_DAMPING, REF_FREQ/f); }
 function buildPluckedBuffer(ctx, freq, dur, damping){
@@ -839,7 +904,7 @@ async function playNote(lane, vol, bend){
    Q/W/E/R/T/Y/U/I=0.25/0.5/0.75/1/1.25/1.5/1.75/2박 선택, Ctrl+Z=뒤로, Ctrl+Y=다시 실행, Ctrl+A=전체 선택,
    Delete/Backspace=선택 삭제, Esc=선택 해제 */
 let aKeyDown = false, sKeyDown = false, dKeyDown = false, shiftKeyDown = false;
-const SPACEBAR_EXEMPT_IDS = new Set(['volumeSlider', 'exportBox']); // 볼륨바·코드창은 글자 입력용이 아니라서, 포커스가 있어도 스페이스바 단축키를 막지 않는다
+const SPACEBAR_EXEMPT_IDS = new Set(['volumeSlider', 'exportBox', 'recVolumeSlider']); // 볼륨바·코드창은 글자 입력용이 아니라서, 포커스가 있어도 스페이스바 단축키를 막지 않는다
 
 /* ===================== 단축키 안내 패널 (관리자는 키를 다시 지정하거나 설명을 고칠 수 있음) =====================
    dur/space 타입은 실제로 여기서 지정한 키로 그리드 단축키 동작이 바뀐다.
@@ -1122,7 +1187,7 @@ function resolveNoteType(shiftKey, lane){
 const cells = NOTES.map(()=>new Array(STEPS).fill(0));
 const cellTypes = NOTES.map(()=>new Array(STEPS).fill('normal'));
 const MAX_DUR = 8; // 현재 지원하는 최대 음 길이(칸 수) = 2박
-let currentDur = 4; // 기본값: 1박(4칸)
+let currentNudgeStep = 4; // 음 사이 이동 간격(다음 음까지 거리) 기본값: 1박(4칸) — Q~I로 바꿀 수 있음
 const TYPE_MARK = {
   tremolo:'///', semitone:'A', semitone2:'S2', step:'D',
   'semitone-tremolo':'A///', 'semitone2-tremolo':'S2///', 'step-tremolo':'D///'
@@ -1192,40 +1257,12 @@ function recRedo(){
   refreshRecGrid();
 }
 
-function setDuration(d, btn, ctx){
-  currentDur = d;
+// Q~I 단축키(또는 버튼)는 이제 '음 길이'가 아니라, 선택한 음을 옮길 때 쓰는 '이동 간격(다음 음까지 거리)'을 정한다.
+// 음은 항상 점(위치)으로만 존재하므로, 여기서 곧바로 뭔가를 다시 그리진 않고 다음 이동에 쓰일 값만 저장해둔다.
+function setDuration(d, btn){
+  currentNudgeStep = d;
   document.querySelectorAll('.dur-btn').forEach(b=>b.classList.remove('active'));
   if(btn) btn.classList.add('active');
-  if(ctx) applyDurationToSelection(d, ctx.sel, ctx.cells, ctx.types, ctx.push, ctx.refresh);
-  else applyDurationToSelection(d); // 이미 선택된 블록이 있으면 그 블록들의 길이도 함께 바꾼다
-}
-/* ---------- 이미 찍혀 있는 선택된 블록들에게 음 길이/반음/트레몰로를 일괄 적용 ----------
-   개수와 상관없이, 지금 선택되어 있는 블록이 있으면 편집 도구 버튼이나 단축키를 눌렀을 때
-   '앞으로 찍을 노트의 기본값'만 바뀌는 게 아니라 선택된 블록들 자체가 바로 그렇게 수정된다. */
-function applyDurationToSelection(newDur, selSet, srcCells, srcTypes, pushHist, refresh){
-  selSet = selSet || selectedCells; srcCells = srcCells || cells; srcTypes = srcTypes || cellTypes;
-  pushHist = pushHist || pushHistory; refresh = refresh || refreshGrid;
-  if(selSet.size === 0) return false;
-  pushHist();
-  let changed = false;
-  selSet.forEach(key=>{
-    const [lane, step] = key.split(',').map(Number);
-    const oldSpan = srcCells[lane][step];
-    if(oldSpan <= 0) return; // 이미 지워졌거나 가려진 칸이면 건너뜀 (선택 키는 항상 시작 칸 기준)
-    const origType = srcTypes[lane][step];
-    // 같은 레인에서 이 노트 바로 다음에 오는 '선택되지 않은' 다른 노트를 침범하지 않도록 제한한다
-    let nextStart = STEPS;
-    for(let s = step + 1; s < STEPS; s++){
-      if(srcCells[lane][s] > 0 && !selSet.has(cellKey(lane, s))){ nextStart = s; break; }
-    }
-    const finalSpan = Math.max(1, Math.min(newDur, nextStart - step, STEPS - step));
-    for(let s = step; s < step + oldSpan; s++){ srcCells[lane][s] = 0; srcTypes[lane][s] = 'normal'; }
-    srcCells[lane][step] = finalSpan;
-    srcTypes[lane][step] = origType;
-    changed = true;
-  });
-  if(changed) refresh();
-  return changed;
 }
 function applyBendToSelection(bendType, selSet, srcCells, srcTypes, pushHist, refresh){
   selSet = selSet || selectedCells; srcCells = srcCells || cells; srcTypes = srcTypes || cellTypes;
@@ -1284,7 +1321,7 @@ function toggleEditToolbar(){
 
 function selectDurationByKey(d, ctx){
   const btn = document.querySelector('.dur-btn[data-dur="' + d + '"]');
-  setDuration(d, btn, ctx);
+  setDuration(d, btn); // ctx는 더 이상 안 쓰임(음 길이 개념이 없어져서) — 이동 간격 값만 전역으로 공유
 }
 // 지금 활성화된 편집 대상이 '녹화 창(일시정지 상태)'인지 판단 — 맞다면 모든 단축키가 녹화 데이터 쪽으로 향한다
 function isRecEditingContext(){
@@ -1540,7 +1577,8 @@ function selectRange(anchor, target, srcCells, selSet, refresh){
 // 선택된 음을 방향 버튼으로 한 칸씩 옮긴다 (터치에서 드래그 이동 대신 사용하기 좋음; 데스크톱에서도 사용 가능)
 function nudgeSelection(deltaLane, deltaStep){
   if(selectedCells.size === 0){ showEditorToast('먼저 옮길 음을 선택해주세요.'); return; }
-  moveSelectedNotes(deltaLane, deltaStep);
+  // 좌우 이동은 Q~I로 정해둔 '이동 간격'만큼씩, 위아래(계이름) 이동은 항상 한 칸씩
+  moveSelectedNotes(deltaLane, deltaStep * currentNudgeStep);
 }
 function moveSelectedNotes(deltaLane, deltaStep, selSet, srcCells, srcTypes, pushHist, refresh){
   selSet = selSet || selectedCells; srcCells = srcCells || cells; srcTypes = srcTypes || cellTypes;
@@ -1625,9 +1663,9 @@ function paintCell(lane, step, add, noteType, srcCells, srcTypes, pushHist, refr
       noteType = noteType.replace('semitone2', 'semitone');
     }
     pushHist();
-    const span = Math.min(currentDur, STEPS - step);
-    for(let s=step; s<step+span; s++){ srcCells[lane][s] = 0; srcTypes[lane][s] = 'normal'; }
-    srcCells[lane][step] = span;
+    // 음은 항상 게임 화면처럼 '한 시점의 점'으로 찍는다. 다음 음까지의 간격(=박자)은
+    // 이 점을 어느 칸에 찍느냐(위치)로만 정해지고, 폭으로는 표현하지 않는다.
+    srcCells[lane][step] = 1;
     srcTypes[lane][step] = noteType || 'normal';
     playNote(lane, undefined, TYPE_BEND[noteType]);
   }else{
@@ -1635,13 +1673,6 @@ function paintCell(lane, step, add, noteType, srcCells, srcTypes, pushHist, refr
       pushHist();
       srcCells[lane][step] = 0;
       srcTypes[lane][step] = 'normal';
-    }else{
-      // 노트 중간(가려진 칸) 위에서 지우기를 하면, 그 음의 시작 칸을 찾아서 지운다
-      for(let k=1; k<MAX_DUR; k++){
-        const s = step - k;
-        if(s < 0) break;
-        if(srcCells[lane][s] > k){ pushHist(); srcCells[lane][s] = 0; srcTypes[lane][s] = 'normal'; break; }
-      }
     }
   }
   refresh();
@@ -1667,8 +1698,8 @@ function refreshGrid(){
     cellEl.classList.toggle('semitone2', isOn && hasSemitone2);
     cellEl.classList.toggle('step', isOn && hasStep);
     cellEl.classList.toggle('selected', isOn && selectedCells.has(cellKey(lane, step)));
-    cellEl.textContent = (isOn && TYPE_MARK[type]) ? TYPE_MARK[type] : '';
-    cellEl.style.display = ''; // 인라인 스타일을 비워서 CSS(.cell.on.tremolo 등의 display:flex 가운데 정렬)가 그대로 적용되게 함
+    cellEl.innerHTML = (isOn && TYPE_MARK[type]) ? '<span class="mark-text">'+TYPE_MARK[type]+'</span>' : '';
+    cellEl.style.display = '';
   });
   // 긴 노트에 가려지는 뒤쪽 칸들은 숨긴다 (숨겨져도 grid-column-start는 그대로라 다른 칸에 영향 없음)
   document.querySelectorAll('#grid .cell').forEach(cellEl=>{
@@ -2582,6 +2613,9 @@ function openRecordModal(){
   updateRecToggleUI();
   updateRecStatusUI();
   updateRecPlayheadPosition();
+  // 메인 툴바에서 이미 조절해둔 볼륨이 있다면 녹화 창 슬라이더에도 그대로 반영
+  const mainVol = document.getElementById('volumeSlider');
+  if(mainVol) setVolume(mainVol.value);
 }
 function closeRecordModal(){
   if(recActive) toggleRec(); // 열어둔 채로 닫으면 자동으로 일시정지 처리
@@ -2593,6 +2627,7 @@ function clearRecordingState(){
   recElapsedMs = 0;
   recPressState = {};
   recActive = false;
+  stopRecMetronome();
   recKeyboardSelectedLane = null;
   recSelectedCells.clear();
   recLastSelectionAnchor = null;
@@ -2641,6 +2676,8 @@ function toggleRec(){
       recActive = true;
       recLastResumeAt = performance.now();
       recRafId = requestAnimationFrame(recTick);
+      const metroToggle = document.getElementById('recMetronomeToggle');
+      if(metroToggle && metroToggle.checked) startRecMetronome(); // 박자를 맞출 수 있게 똑딱이 소리 시작
       updateRecToggleUI();
       updateRecStatusUI();
     }, 1500);
@@ -2650,11 +2687,48 @@ function toggleRec(){
   recActive = false;
   recElapsedMs = recCurrentElapsedMs();
   if(recRafId) cancelAnimationFrame(recRafId);
+  stopRecMetronome();
   // 누르고 있던 입력이 있으면 지금 시점에서 그대로 확정한다
   Object.keys(recPressState).forEach(laneStr => finalizeRecPress(Number(laneStr)));
   document.querySelectorAll('.rec-lane-hit').forEach(el => el.classList.remove('active'));
   updateRecToggleUI();
   updateRecStatusUI();
+}
+/* ---------- 녹화 중 박자를 맞출 수 있게 도와주는 메트로놈(똑딱이) ----------
+   setTimeout을 반복 호출하는 방식은 매번 아주 조금씩 밀려서(드리프트) 누적 오차가 생길 수 있으므로,
+   녹화가 시작된 절대 시각(recLastResumeAt) 기준으로 '몇 번째 박'인지 계산해 항상 정확한 절대 시각에 맞춰 재생한다. */
+let recMetronomeTimeout = null, recMetronomeTickCount = 0;
+function startRecMetronome(){
+  stopRecMetronome();
+  recMetronomeTickCount = 0;
+  scheduleNextRecMetronomeTick();
+}
+function scheduleNextRecMetronomeTick(){
+  const bpm = Number(document.getElementById('bpmInput').value) || 100;
+  const beatMs = 60000 / bpm;
+  const targetTime = recLastResumeAt + recMetronomeTickCount * beatMs;
+  const delay = Math.max(0, targetTime - performance.now());
+  recMetronomeTimeout = setTimeout(()=>{
+    playMetronomeClick(recMetronomeTickCount % 4 === 0); // 매 4박자 첫 박은 조금 더 높은 소리로 강조
+    recMetronomeTickCount++;
+    scheduleNextRecMetronomeTick();
+  }, delay);
+}
+function stopRecMetronome(){
+  if(recMetronomeTimeout){ clearTimeout(recMetronomeTimeout); recMetronomeTimeout = null; }
+}
+function playMetronomeClick(accent){
+  try{
+    if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.frequency.value = accent ? 1400 : 900;
+    gain.gain.setValueAtTime(0.18, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.04);
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.05);
+  }catch(e){}
 }
 function updateRecToggleUI(){
   const btn = document.getElementById('recToggleBtn');
@@ -2662,6 +2736,13 @@ function updateRecToggleUI(){
   btn.classList.toggle('recording', recActive);
   btn.textContent = recActive ? '⏸ REC 중(누르면 일시정지)' : '🔴 REC';
   document.querySelectorAll('.rec-lane-hit').forEach(el => el.classList.toggle('active', recActive));
+  // 녹화 중일 때는 편집기 그리드 대신 실제 게임 화면처럼 보이게, 멈추면 다시 그리드로 돌아온다
+  document.getElementById('recGridWrap').style.display = recActive ? 'none' : '';
+  document.getElementById('recGameStage').classList.toggle('show', recActive);
+  if(recActive) buildRecGameStage();
+  // 볼륨은 녹화 중이 아닐 때만 조절 가능 (값 자체는 녹화 중에도 그대로 적용됨)
+  const recVolSlider = document.getElementById('recVolumeSlider');
+  if(recVolSlider) recVolSlider.disabled = recActive;
 }
 function updateRecStatusUI(){
   const statusEl = document.getElementById('recStatusText');
@@ -2677,9 +2758,48 @@ function recTick(){
 }
 // 지금 녹화 위치(빨간 세로선)를 실시간으로 옮겨 그리고, 항상 화면에 보이도록 스크롤도 따라가게 한다
 // 음계(줄 이름)를 클릭해서 미리 골라두면, 녹화 시작 전이든 중이든 그 음부터 키보드(스페이스바)로 녹음할 수 있다
+// 녹화 중일 때 보여줄, 실제 게임 화면과 동일한 모습의 연주용 레인 (그리드가 아니라 진짜 게임처럼 줄을 눌러서 녹음한다)
+let recGameStageBuilt = false;
+function buildRecGameStage(){
+  if(recGameStageBuilt) return; // 한 번만 만들어두고 재사용 (녹화 시작할 때마다 다시 만들 필요 없음)
+  const stage = document.getElementById('recGameStage');
+  for(let lane=0; lane<13; lane++){
+    const laneEl = document.createElement('div');
+    laneEl.className = 'rec-game-lane';
+    laneEl.style.top = (lane * (100/13)) + '%';
+    const stringEl = document.createElement('div');
+    stringEl.className = 'rec-game-lane-string' + (TEAL_LANES.has(lane) ? ' teal' : '');
+    laneEl.appendChild(stringEl);
+    const labelEl = document.createElement('div');
+    labelEl.className = 'rec-game-lane-label';
+    labelEl.textContent = NOTES[lane];
+    laneEl.appendChild(labelEl);
+    const hitEl = document.createElement('div');
+    hitEl.className = 'rec-game-hit';
+    hitEl.addEventListener('pointerdown', (e)=>{
+      e.preventDefault();
+      try{ hitEl.setPointerCapture(e.pointerId); }catch(err){}
+      startRecPress(lane);
+      laneEl.classList.add('flash');
+    });
+    const release = ()=>{ finalizeRecPress(lane); laneEl.classList.remove('flash'); };
+    hitEl.addEventListener('pointerup', release);
+    hitEl.addEventListener('pointercancel', release);
+    laneEl.appendChild(hitEl);
+    stage.appendChild(laneEl);
+  }
+  recGameStageBuilt = true;
+  // 이미 키보드로 골라둔 현이 있다면(그리드에서 미리 선택했거나 등) 새로 만든 화면에도 그 선택 표시를 그대로 반영
+  if(recKeyboardSelectedLane !== null){
+    document.querySelectorAll('.rec-game-lane').forEach((laneEl,i)=>{ laneEl.classList.toggle('keyboard-selected', i===recKeyboardSelectedLane); });
+  }
+}
+
 function selectRecKeyboardLane(lane){
   recKeyboardSelectedLane = lane;
   recLaneEls.forEach((row,i)=>{ if(row) row.classList.toggle('keyboard-selected', i===lane); });
+  // 녹화 중일 때 보이는 게임 스타일 화면에도 동일하게 선택 표시를 반영한다
+  document.querySelectorAll('.rec-game-lane').forEach((laneEl,i)=>{ laneEl.classList.toggle('keyboard-selected', i===lane); });
 }
 
 /* ---------- 녹화 창 전용 재생: 녹화 중이 아닐 때 스페이스바로 지금까지 녹음한 내용을 들어볼 수 있다 ---------- */
@@ -2791,23 +2911,48 @@ function paintRecCell(lane, step, span, noteType){
   recCellTypes[lane][step] = noteType || 'normal';
   refreshRecGrid();
 }
+/* 녹화 중 Shift를 누른 채 꾹 누르면(게임 화면과 동일), 실제로 잡히는 동안에도 트레몰로처럼 반복 재생되게 한다.
+   (녹음되는 블록 자체는 finalizeRecPress에서 길이·Shift 여부로 이미 트레몰로 타입으로 저장되고 있었지만,
+   누르고 있는 동안 들리는 소리가 한 번만 나서 실제 게임과 다르게 느껴졌다.) */
+let recTremoloHoldTimeout = null, recTremoloInterval = null, recTremoloLane = null;
+function beginRecTremolo(lane){
+  stopRecTremolo();
+  recTremoloLane = lane;
+  recTremoloHoldTimeout = setTimeout(()=>{
+    recTremoloInterval = setInterval(()=>{
+      const press = recPressState[lane];
+      playNote(lane, undefined, press ? press.bend : null);
+    }, 55);
+  }, 80);
+}
+function stopRecTremolo(){
+  if(recTremoloHoldTimeout){ clearTimeout(recTremoloHoldTimeout); recTremoloHoldTimeout = null; }
+  if(recTremoloInterval){ clearInterval(recTremoloInterval); recTremoloInterval = null; }
+  recTremoloLane = null;
+}
+window.addEventListener('pointerup', stopRecTremolo);
+window.addEventListener('blur', stopRecTremolo);
+
 function startRecPress(lane){
   if(recPressState[lane]) return; // 이미 누르고 있는 중이면 무시(중복 입력 방지)
   let bend = aKeyDown ? 'semitone' : (sKeyDown ? 'semitone2' : (dKeyDown ? 'step' : null));
   if(bend) bend = sanitizeBendForLane(lane, bend);
   recPressState[lane] = { startMs: recCurrentElapsedMs(), bend };
   playNote(lane, undefined, bend);
+  if(shiftKeyDown) beginRecTremolo(lane); // Shift를 누른 채 꾹 누르면 게임 화면과 동일하게 반복 재생
 }
 function finalizeRecPress(lane){
+  stopRecTremolo();
   const press = recPressState[lane];
   if(!press) return;
   delete recPressState[lane];
   const startStep = recMsToStep(press.startMs);
   const durationMs = recCurrentElapsedMs() - press.startMs;
-  const span = Math.max(1, recMsToStep(durationMs) || 1);
+  // 음은 항상 게임 화면처럼 '누른 시점' 하나의 점으로만 찍는다 (길이는 다음 음과의 간격으로 자연스럽게 정해짐).
+  // 다만 얼마나 오래 눌렀는지는 트레몰로(Shift+꾹 누르기) 여부를 판단하는 데만 쓰인다.
   const isTremolo = shiftKeyDown && durationMs >= 80; // 게임 화면과 동일한 Shift+꾹 누르기 기준
   const type = composeNoteType(press.bend || 'none', isTremolo);
-  paintRecCell(lane, startStep, span, type);
+  paintRecCell(lane, startStep, 1, type);
 }
 
 function buildRecGrid(){
@@ -2947,7 +3092,7 @@ function refreshRecGrid(){
     cellEl.classList.toggle('semitone2', isOn && hasSemitone2);
     cellEl.classList.toggle('step', isOn && hasStep);
     cellEl.classList.toggle('selected', isOn && recSelectedCells.has(cellKey(lane, step)));
-    cellEl.textContent = (isOn && TYPE_MARK[type]) ? TYPE_MARK[type] : '';
+    cellEl.innerHTML = (isOn && TYPE_MARK[type]) ? '<span class="mark-text">'+TYPE_MARK[type]+'</span>' : '';
     cellEl.style.display = '';
   });
   document.querySelectorAll('#recGrid .cell').forEach(cellEl=>{
@@ -2977,6 +3122,8 @@ window.addEventListener('keydown', (e)=>{
       if(!recSpaceHeld && recKeyboardSelectedLane !== null){
         recSpaceHeld = true;
         startRecPress(recKeyboardSelectedLane);
+        const laneEl = document.querySelectorAll('.rec-game-lane')[recKeyboardSelectedLane];
+        if(laneEl) laneEl.classList.add('flash'); // 게임 화면과 동일하게 스페이스바로 뜯을 때도 반짝임 효과
       }
     }else if(!recCountingDown){
       // 녹화 중이 아닐 때 스페이스바는 지금까지 녹화된 내용을 재생/일시정지하는 용도
@@ -2987,7 +3134,11 @@ window.addEventListener('keydown', (e)=>{
 window.addEventListener('keyup', (e)=>{
   if(e.code === 'Space' && recSpaceHeld){
     recSpaceHeld = false;
-    if(recKeyboardSelectedLane !== null) finalizeRecPress(recKeyboardSelectedLane);
+    if(recKeyboardSelectedLane !== null){
+      finalizeRecPress(recKeyboardSelectedLane);
+      const laneEl = document.querySelectorAll('.rec-game-lane')[recKeyboardSelectedLane];
+      if(laneEl) laneEl.classList.remove('flash');
+    }
   }
 });
 
